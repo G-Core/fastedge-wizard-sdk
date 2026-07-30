@@ -71,7 +71,7 @@ const apps = await session.fastedge.apps.list();
 
 ## 4. Write data (with user consent)
 
-Write intents (`apps.create`, `apps.update`, `secrets.create`, `deployment.apply`) trigger a consent dialog in the portal. The promise resolves once the user confirms and the action completes. If the user clicks Cancel, `WizardError` with code `user_cancelled` is thrown — handle this as a non-error UI state.
+Write intents (`apps.create`, `apps.update`, `secrets.generateRandom`, `deployment.apply`) trigger a consent dialog in the portal. The promise resolves once the user confirms and the action completes. If the user clicks Cancel, `WizardError` with code `user_cancelled` is thrown — handle this as a non-error UI state.
 
 ```js
 try {
@@ -91,13 +91,25 @@ try {
 }
 ```
 
+For pickers and generate/create flows where a cancel is just "nothing selected",
+the SDK ships `optional()` so you don't repeat that try/catch at every call site:
+
+```js
+import { optional } from '@gcore/fastedge-wizard-sdk';
+
+const picked = await optional(() => session.fastedge.secrets.pickOrCreate());
+if (picked) set({ secret: picked }); // null when the user dismissed the dialog
+```
+
+It swallows only `user_cancelled`; any other error still throws.
+
 ## 5. Multi-step deployment (plan → apply)
 
 For wizards that need to create several linked resources atomically, use the plan/apply pattern. `plan` is a dry-run (no consent dialog); `apply` shows a single consent dialog and streams progress events.
 
 ```js
 const plan = await session.deployment.plan({
-    apps: [
+    fastedgeApps: [
         {
             ref: 'auth',
             name: 'my-auth-proxy',
@@ -124,7 +136,7 @@ const result = await session.deployment.apply({ planId: plan.planId });
 off(); // unsubscribe
 
 if (result.status === 'complete') {
-    for (const app of result.created) {
+    for (const app of result.createdFastedgeApps) {
         console.log(`${app.ref} → id ${app.id}, url ${app.url}`);
     }
 }
@@ -135,11 +147,9 @@ if (result.status === 'complete') {
 Secrets never cross the bridge as plaintext. The SDK only ever passes `{ id, name }` refs.
 
 ```js
-// Let the user pick from existing secrets via the portal's picker UI
-const [secretRef] = await session.fastedge.secrets.pick();
-
-// Or open the portal's create-secret modal
-const newRef = await session.fastedge.secrets.create({ name: 'my-api-key' });
+// Let the user pick an existing secret — or create a new one inline — via the portal's picker UI.
+// The user creates within the same modal; no separate create call is needed.
+const [secretRef] = await session.fastedge.secrets.pickOrCreate();
 
 // Pass the ref id when creating/updating an app
 await session.fastedge.apps.create({
@@ -149,6 +159,14 @@ await session.fastedge.apps.create({
     secretRefs: { API_KEY: secretRef.id },
 });
 ```
+
+The same call covers KV stores via `session.fastedge.stores.pickOrCreate()`.
+
+**Local dev tip:** in the mock host, choosing "➕ Create new…" prompts you for a name (pre-filled
+with an indexed default). For flows that create several resources — where per-create prompts get
+tedious — seed realistic names up front in `fixtures/fastedge/new-secrets.json` /
+`fixtures/fastedge/new-stores.json` (an ordered list of `{ "name": "...", "comment"?: "..." }`);
+the mock hands out the next one on each create, with no prompts.
 
 ## 7. Clean up
 
@@ -168,17 +186,17 @@ useEffect(() => {
 Working wizard implementations live in [`fastedge-wizard-apps`](https://github.com/G-Core/fastedge-wizard-apps):
 
 - **`wizards/_template/`** — minimal starter skeleton, copy this to begin a new wizard
-- **`wizards/write-intents/`** — full smoke-test wizard exercising every write intent
+- **`wizards/_example-intents/`** — reference wizard exercising every v1 write intent with inline docs
 
-To run a wizard locally against the mock host:
+To run the reference wizard locally against the mock host:
 
 ```sh
-cd wizards/write-intents
+cd wizards/_example-intents
 pnpm install
 pnpm run dev   # builds and starts the mock host on http://localhost:9999
 ```
 
-Open `http://localhost:9999/mock-host` to drive the wizard through all steps without a live portal.
+Open `http://localhost:9999` and click "Run demo" to step through all intents without a live portal.
 
 ## Error handling reference
 

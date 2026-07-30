@@ -1,7 +1,9 @@
 /**
- * Doc-04 intent catalog shapes — full typed surface (Phase 2). Write/deployment
- * intents (`apps.*`, `secrets.*`, `deployment.*`) are transport-real stubs whose
- * host handlers land in Phase 4, so calls resolve `denied` today.
+ * Intent catalog shapes — all SDK-exposed namespaces fully typed.
+ *
+ * Mock host (`pnpm run dev`) simulates every intent across all namespaces —
+ * `fastedge.*`, `cdn.*`, `stores.*`, `deployment.*` — using fixture data.
+ * Build and test end-to-end locally without a live portal connection.
  */
 
 // --- context.get ---
@@ -13,6 +15,10 @@ export interface WizardContext {
     wizardAppId: number;
     managed: { appIds: number[] };
     features: Record<string, boolean>;
+    /** ID of the template that launched this wizard (template mode), or null (app re-entry). */
+    launchTemplateId: number | null;
+    /** IDs of companion templates this wizard deploys alongside the main one (e.g. proxy-wasm filter pair). */
+    companionTemplateIds: number[];
 }
 
 // --- templates.* ---
@@ -119,14 +125,115 @@ export interface SecretSummary {
     comment?: string;
 }
 
-export interface SecretCreateParams {
+export interface SecretRef {
+    id: number;
+    name: string;
+}
+
+// --- stores.* ---
+
+export interface KvStoreSummary {
+    id: number;
     name: string;
     comment?: string;
 }
 
-export interface SecretRef {
+export interface KvStoreRef {
     id: number;
     name: string;
+}
+
+// --- secrets.generateRandom / generateKeypair ---
+
+export interface SecretGenerateParams {
+    name: string;
+    comment?: string;
+    bytes: number;
+}
+
+export interface SecretGenerateResult {
+    id: number;
+    name: string;
+}
+
+export interface SecretGenerateKeypairParams {
+    name: string;
+    comment?: string;
+    algorithm: 'ES256';
+}
+
+export interface SecretGenerateKeypairResult {
+    id: number;
+    name: string;
+    publicKey: string;
+}
+
+// --- cdn.resources.* ---
+
+export interface CdnResourceSummary {
+    id: number;
+    cname: string;
+    description?: string;
+    status: string;
+}
+
+export interface CdnResourcePickResult {
+    id: number;
+    cname: string;
+}
+
+// --- cdn.origins.* ---
+
+export interface CdnOriginCreateParams {
+    name: string;
+    appId: number;
+}
+
+export interface CdnOriginCreateResult {
+    id: number;
+    name: string;
+}
+
+export interface CdnOriginSummary {
+    id: number;
+    name: string;
+}
+
+// --- cdn.rules.* ---
+
+export interface CdnRuleCreateParams {
+    resourceId: number;
+    name: string;
+    rule: string;
+    weight?: number;
+    originGroupId?: number;
+    fastedgeFilter?: {
+        appId: number;
+        hook: 'on_request_headers' | 'on_response_headers';
+        interruptOnError?: boolean;
+    };
+}
+
+export interface CdnRuleCreateResult {
+    id: number;
+    name: string;
+    rule: string;
+}
+
+export interface CdnRulesListParams {
+    resourceId: number;
+}
+
+export interface CdnRuleSummary {
+    id: number;
+    name: string;
+    rule: string;
+    weight?: number;
+    originGroupId?: number;
+    fastedgeFilter?: {
+        appId: number;
+        hook: 'on_request_headers' | 'on_response_headers';
+    };
 }
 
 // --- deployment.* ---
@@ -140,14 +247,51 @@ export interface DeploymentPlanApp {
     secretRefs?: Record<string, number>;
 }
 
+export interface DeploymentPlanStore {
+    ref: string;
+    name?: string;
+    comment?: string;
+}
+
+export interface DeploymentPlanOrigin {
+    ref: string;
+    name: string;
+    appRef: string; // ref of an app in apps[]
+}
+
+export interface DeploymentPlanRule {
+    ref: string;
+    name: string;
+    rule: string;
+    weight?: number;
+    originGroupRef?: string; // ref of an origin in newOrigins[]
+    fastedgeFilter?: {
+        appRef: string; // ref of an app in apps[]
+        hook: 'on_request_headers' | 'on_response_headers';
+        interruptOnError?: boolean;
+    };
+}
+
 export interface DeploymentPlanParams {
-    apps: DeploymentPlanApp[];
+    fastedgeApps: DeploymentPlanApp[];
     sharedEnv?: Record<string, string>;
-    newSecrets?: Array<{ ref: string; name: string }>;
+    newFastedgeSecrets?: Array<{ ref: string; name: string }>;
+    newFastedgeStores?: DeploymentPlanStore[];
+    cdnResourceId?: number;
+    newCdnOrigins?: DeploymentPlanOrigin[];
+    newCdnRules?: DeploymentPlanRule[];
 }
 
 export interface DeploymentPlanStep {
-    action: 'create-app' | 'set-env' | 'create-secret' | 'link';
+    action:
+        | 'fastedge.apps.create'
+        | 'fastedge.apps.set-env'
+        | 'fastedge.apps.link'
+        | 'fastedge.secrets.create'
+        | 'fastedge.stores.create'
+        | 'cdn.resources.pick'
+        | 'cdn.origins.create'
+        | 'cdn.rules.create';
     describe: string;
 }
 
@@ -159,7 +303,23 @@ export interface DeploymentPlan {
 }
 
 export interface DeploymentApplyResult {
-    created: Array<{ ref: string; id: number; url: string }>;
+    createdFastedgeApps: Array<{ ref: string; id: number; url: string }>;
+    createdFastedgeStores?: Array<{ ref: string; id: number; name: string }>;
+    createdCdnOrigins?: Array<{ ref: string; id: number; name: string }>;
+    createdCdnRules?: Array<{ ref: string; id: number }>;
     status: 'complete' | 'rolled_back' | 'partial';
     failedStep?: { describe: string; error: string };
+}
+
+export interface DeploymentProgressEvent {
+    step: number;
+    total: number;
+    describe: string;
+}
+
+export interface DeployOptions {
+    /** Called once after the plan is computed, before apply begins. */
+    onPlan?: (plan: DeploymentPlan) => void;
+    /** Called for each deployment.progress event during apply. */
+    onProgress?: (event: DeploymentProgressEvent) => void;
 }

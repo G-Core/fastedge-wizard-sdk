@@ -9,10 +9,10 @@ A wizard is a small web app (any framework, or plain HTML/JS) that the portal lo
 This package is not published to npm. Install directly from GitHub (requires read access to the repo):
 
 ```sh
-npm install github:G-Core/fastedge-wizard-sdk#v1.0.0
+npm install github:G-Core/fastedge-wizard-sdk#<tag>
 ```
 
-Or pin a specific commit:
+Check the [releases page](https://github.com/G-Core/fastedge-wizard-sdk/releases) for the latest tag, or pin a specific commit:
 
 ```sh
 npm install github:G-Core/fastedge-wizard-sdk#<commit-sha>
@@ -22,7 +22,7 @@ The import path stays the same — configure your `package.json` name alias if n
 
 ```json
 "dependencies": {
-  "@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#v1.0.0"
+  "@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#<tag>"
 }
 ```
 
@@ -89,9 +89,10 @@ session.fastedge.apps.link(params): Promise<AppLinkResult>       // requires use
 Secrets never cross the bridge as plaintext — only `{ id, name }` refs do.
 
 ```ts
-session.fastedge.secrets.list(): Promise<SecretSummary[]>
-session.fastedge.secrets.create(params): Promise<SecretRef>   // opens portal's create-secret modal
-session.fastedge.secrets.pick(): Promise<SecretRef[]>         // opens portal's secret picker
+// Opens the portal's secret picker; the user selects existing secret(s) OR creates one inline.
+session.fastedge.secrets.pickOrCreate(): Promise<SecretRef[]>
+session.fastedge.secrets.generateRandom(params): Promise<SecretGenerateResult>      // host-generated random value
+session.fastedge.secrets.generateKeypair(params): Promise<SecretGenerateKeypairResult>  // ES256, returns publicKey
 ```
 
 #### `session.deployment`

@@ -1,18 +1,15 @@
-import { stub, WRITE_INTENTS, applyFixtures } from './stubs.js';
+import { stub, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
 
 const V = 1;
 let port = null;
 let theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-const consents = new Map(); // id → { intent, params }
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
-// Load wizard-specific fixture overrides before the iframe starts. Top-level
-// await defers the rest of this module until the fetch resolves.
 
 try {
     const res = await fetch('/wizard-host/fixtures.json');
     if (res.ok) applyFixtures(await res.json());
-} catch { /* no fixtures or server not ready — defaults stand */ }
+} catch { /* no fixtures — defaults stand */ }
 
 // ── Panel resize ──────────────────────────────────────────────────────────────
 
@@ -24,8 +21,7 @@ if (savedW) document.documentElement.style.setProperty('--panel-w', savedW + 'px
 
 document.getElementById('rh').addEventListener('mousedown', e => {
     e.preventDefault();
-    const startX = e.clientX;
-    const startW = panel.offsetWidth;
+    const startX = e.clientX, startW = panel.offsetWidth;
     document.body.classList.add('resizing');
     document.getElementById('wiz').style.pointerEvents = 'none';
 
@@ -47,13 +43,11 @@ document.getElementById('rh').addEventListener('mousedown', e => {
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 const wiz = document.getElementById('wiz');
-// Derive hostOrigin from the current page — no PORT substitution needed in HTML.
 wiz.src = `/index.html?hostOrigin=${window.location.origin}`;
 wiz.addEventListener('load', init);
 
 applyTheme();
 document.getElementById('tb').addEventListener('click', toggleTheme);
-document.getElementById('cl').addEventListener('click', onConsentClick);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -62,17 +56,28 @@ function setStatus(text, cls = '') {
     el.textContent = text; el.className = cls;
 }
 
-function log(icon, text, cls = '') {
+function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// log(icon, text, cls?, payload?)
+// If payload is provided the entry is expandable via <details>.
+function log(icon, text, cls = '', payload = null) {
     const lg = document.getElementById('lg');
     const row = document.createElement('div');
     row.className = 'le ' + cls;
-    row.innerHTML = `<span>${icon}</span><span>${esc(text)}</span>`;
+    if (payload !== null && payload !== undefined) {
+        row.innerHTML =
+            `<span>${icon}</span>` +
+            `<details class="le-det">` +
+                `<summary>${esc(text)}</summary>` +
+                `<pre>${esc(JSON.stringify(payload, null, 2))}</pre>` +
+            `</details>`;
+    } else {
+        row.innerHTML = `<span>${icon}</span><span>${esc(text)}</span>`;
+    }
     lg.appendChild(row);
     lg.parentElement.scrollTop = lg.parentElement.scrollHeight;
-}
-
-function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -95,8 +100,8 @@ function toggleTheme() {
 
 function init() {
     if (port) { port.onmessage = null; port.close(); port = null; }
-    document.getElementById('cl').innerHTML = '';
-    consents.clear();
+    modalQueue.length = 0;
+    document.getElementById('modal-back').hidden = true;
 
     const ch = new MessageChannel();
     port = ch.port1;
@@ -133,69 +138,182 @@ function send(id, ok, payload) {
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
+let lastPlan = null; // cached from deployment.plan so apply modal can show it
+
 function dispatch({ id, intent, params }) {
-    log('📨', intent, 'dim');
-    if (WRITE_INTENTS.has(intent)) {
-        addConsent(id, intent, params);
+    log('📨', intent, 'dim', Object.keys(params ?? {}).length ? params : null);
+
+    if (intent === 'deployment.plan') {
+        const result = stub(intent, params, theme);
+        lastPlan = result;
+        send(id, true, result);
+        log('✅', `${intent} → ok`, 'ok', result);
+    } else if (PICKER_INTENTS.has(intent)) {
+        showPickerModal(id, intent);
+    } else if (WRITE_INTENTS.has(intent)) {
+        showConsentModal(id, intent, params);
     } else {
-        send(id, true, stub(intent, params, theme));
-        log('✅', `${intent} → ok`, 'ok');
+        const result = stub(intent, params, theme);
+        send(id, true, result);
+        log('✅', `${intent} → ok`, 'ok', result);
     }
 }
 
-// ── Consent queue ─────────────────────────────────────────────────────────────
+// ── Modal system ──────────────────────────────────────────────────────────────
+// One modal at a time. Intents that arrive while one is open are queued and
+// shown immediately after the current one resolves.
 
-function addConsent(id, intent, params) {
-    consents.set(id, { intent, params });
-    const div = document.createElement('div');
-    div.className = 'ci';
-    div.dataset.cid = id;
-    div.innerHTML =
-        `<div class="cn">${esc(intent)}</div>` +
-        `<pre class="cp">${esc(JSON.stringify(params, null, 2))}</pre>` +
-        `<div class="cb">` +
-            `<button class="bok" data-action="approve">Approve</button>` +
-            `<button class="bno" data-action="deny">Cancel</button>` +
-        `</div>`;
-    document.getElementById('cl').appendChild(div);
+const modalQueue = []; // array of render functions
+
+function enqueueModal(renderFn) {
+    modalQueue.push(renderFn);
+    if (modalQueue.length === 1) renderFn();
 }
 
-function removeConsent(id) {
-    consents.delete(id);
-    document.querySelector(`.ci[data-cid="${id}"]`)?.remove();
+function closeModal() {
+    document.getElementById('modal-back').hidden = true;
+    modalQueue.shift();
+    if (modalQueue.length > 0) modalQueue[0]();
 }
 
-async function onConsentClick(e) {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const id = btn.closest('.ci')?.dataset.cid;
-    if (!id) return;
-    if (btn.dataset.action === 'approve') await approve(id);
-    else deny(id);
+function openModal() {
+    document.getElementById('modal-back').hidden = false;
 }
 
-async function approve(id) {
-    const { intent, params } = consents.get(id) ?? {};
-    removeConsent(id);
-    if (!intent) return;
-    if (intent === 'deployment.apply') {
-        await runApply(id);
-    } else {
-        send(id, true, stub(intent, params, theme));
-        log('✅', `${intent} → approved`, 'ok');
-    }
+const PICKER_LABELS = {
+    'cdn.resources.pick': 'Select a CDN Resource',
+    'fastedge.stores.pickOrCreate': 'Select or Create a KV Store',
+    'fastedge.secrets.pickOrCreate': 'Select or Create a Secret',
+};
+
+// Returns the resolved value to send back for a given picker intent + selected item.
+function pickerResult(intent, parsedValue) {
+    // secrets.pickOrCreate and stores.pickOrCreate return Array<{id,name}>; cdn.resources.pick returns single object.
+    return (intent === 'cdn.resources.pick') ? parsedValue : [parsedValue];
 }
 
-function deny(id) {
-    const { intent } = consents.get(id) ?? {};
-    removeConsent(id);
-    if (!intent) return;
+function showPickerModal(id, intent) {
+    enqueueModal(() => {
+        const options = getPickerOptions(intent);
+        let selectedIdx = 0;
+
+        document.getElementById('modal-head').textContent = PICKER_LABELS[intent] ?? intent;
+
+        const body = document.getElementById('modal-body');
+        body.innerHTML = options.length
+            ? options.map((opt, i) =>
+                `<div class="pi${i === 0 ? ' sel' : ''}" data-idx="${i}">` +
+                    `<strong>${esc(opt.primary)}</strong>` +
+                    (opt.secondary ? `<span>${esc(opt.secondary)}</span>` : '') +
+                `</div>`).join('')
+            : `<p class="empty-picker">No items available</p>`;
+
+        body.onclick = e => {
+            const item = e.target.closest('.pi');
+            if (!item) return;
+            body.querySelectorAll('.pi').forEach(el => el.classList.remove('sel'));
+            item.classList.add('sel');
+            selectedIdx = parseInt(item.dataset.idx, 10);
+        };
+
+        const foot = document.getElementById('modal-foot');
+        foot.innerHTML =
+            `<button class="bno" id="modal-no">Cancel</button>` +
+            `<button class="bok" id="modal-ok">Select</button>`;
+
+        document.getElementById('modal-ok').onclick = () => {
+            if (!options.length) { closeModal(); deny(id, intent); return; }
+            const val = JSON.parse(options[selectedIdx].value);
+
+            // "Create new…" row — represents the real host's inline create. Seeded fixture names
+            // are used silently; otherwise prompt the developer for a name (pre-filled default).
+            if (val.__create) {
+                const info = getCreateInfo(intent);
+                let ref;
+                if (info.seeded) {
+                    ref = createPicked(intent);
+                } else {
+                    const typed = prompt(`Name for the new ${info.kind}:`, info.nextName);
+                    if (typed === null) { closeModal(); deny(id, intent); return; } // cancelled create
+                    ref = createPicked(intent, typed);
+                }
+                closeModal();
+                const result = pickerResult(intent, ref);
+                send(id, true, result);
+                log('✅', `${intent} → created ${ref.name}`, 'ok', result);
+                return;
+            }
+
+            closeModal();
+            const result = pickerResult(intent, val);
+            send(id, true, result);
+            log('✅', `${intent} → ${val.cname ?? val.name}`, 'ok', result);
+        };
+
+        document.getElementById('modal-no').onclick = () => {
+            closeModal();
+            deny(id, intent);
+        };
+
+        openModal();
+    });
+}
+
+function showConsentModal(id, intent, params) {
+    enqueueModal(() => {
+        const head = document.getElementById('modal-head');
+        head.innerHTML = `<span class="modal-badge">${esc(intent)}</span>`;
+
+        const body = document.getElementById('modal-body');
+        body.onclick = null;
+        if (intent === 'deployment.apply' && lastPlan) {
+            const steps = lastPlan.steps.map(s => `<li>${esc(s.describe)}</li>`).join('');
+            const warnings = (lastPlan.warnings ?? []).map(w => `<p class="warn">⚠ ${esc(w)}</p>`).join('');
+            body.innerHTML = `<p><strong>${esc(lastPlan.summary)}</strong></p><ol>${steps}</ol>${warnings}`;
+        } else {
+            body.innerHTML = `<pre>${esc(JSON.stringify(params, null, 2))}</pre>`;
+        }
+
+        const foot = document.getElementById('modal-foot');
+        const applyLabel = intent === 'deployment.apply' ? 'Apply' : 'Approve';
+        foot.innerHTML =
+            `<button class="bno" id="modal-no">Cancel</button>` +
+            `<button class="bok" id="modal-ok">${applyLabel}</button>`;
+
+        document.getElementById('modal-ok').onclick = async () => {
+            document.getElementById('modal-ok').disabled = true;
+            document.getElementById('modal-no').disabled = true;
+            if (intent === 'deployment.apply') {
+                await runApply(id, body, foot);
+            } else {
+                const result = stub(intent, params, theme);
+                closeModal();
+                send(id, true, result);
+                log('✅', `${intent} → approved`, 'ok', result);
+            }
+        };
+
+        document.getElementById('modal-no').onclick = () => {
+            closeModal();
+            deny(id, intent);
+        };
+
+        openModal();
+    });
+}
+
+function deny(id, intent) {
     send(id, false, { code: 'user_cancelled', message: 'User cancelled' });
     log('🚫', `${intent} → user_cancelled`, 'err');
 }
 
-async function runApply(id) {
+async function runApply(id, body, foot) {
     const steps = ['Creating app resources', 'Setting environment', 'Finalising deployment'];
+    const progress = document.createElement('div');
+    progress.className = 'apply-progress';
+    body.appendChild(progress);
+    foot.innerHTML = '';
+
     for (let i = 0; i < steps.length; i++) {
         await new Promise(r => setTimeout(r, 700));
         if (!port) return;
@@ -203,8 +321,15 @@ async function runApply(id) {
             v: V, type: 'event', event: 'deployment.progress',
             payload: { step: i + 1, total: steps.length, describe: steps[i] },
         });
+        const row = document.createElement('div');
+        row.className = 'ap-step';
+        row.textContent = `[${i + 1}/${steps.length}] ${steps[i]}`;
+        progress.appendChild(row);
         log('📡', `deployment.progress [${i + 1}/${steps.length}] ${steps[i]}`, 'ev');
     }
-    send(id, true, stub('deployment.apply', {}, theme));
-    log('✅', 'deployment.apply → complete', 'ok');
+
+    const result = stub('deployment.apply', {}, theme);
+    closeModal();
+    send(id, true, result);
+    log('✅', 'deployment.apply → complete', 'ok', result);
 }

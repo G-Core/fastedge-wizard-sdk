@@ -23,12 +23,26 @@ import type {
     AppUpdateResult,
     AppLinkParams,
     AppLinkResult,
-    SecretSummary,
-    SecretCreateParams,
     SecretRef,
+    SecretGenerateParams,
+    SecretGenerateResult,
+    SecretGenerateKeypairParams,
+    SecretGenerateKeypairResult,
+    KvStoreRef,
+    CdnResourceSummary,
+    CdnResourcePickResult,
+    CdnOriginCreateParams,
+    CdnOriginCreateResult,
+    CdnOriginSummary,
+    CdnRuleCreateParams,
+    CdnRuleCreateResult,
+    CdnRulesListParams,
+    CdnRuleSummary,
     DeploymentPlanParams,
     DeploymentPlan,
     DeploymentApplyResult,
+    DeploymentProgressEvent,
+    DeployOptions,
 } from './types.js';
 
 export { SDK_VERSION };
@@ -67,17 +81,41 @@ export interface WizardSession {
             link(params: AppLinkParams): Promise<AppLinkResult>;
         };
         secrets: {
-            list(): Promise<SecretSummary[]>;
-            create(params: SecretCreateParams): Promise<SecretRef>;
-            /** Opens the host's secret picker so the user chooses existing secret(s); only the
-             *  selected { id, name } refs cross the bridge (the guest never enumerates the account). */
-            pick(): Promise<SecretRef[]>;
+            /** Opens the host's secret picker so the user chooses existing secret(s) — or creates a new
+             *  one inline. Only the selected/created { id, name } refs cross the bridge (the guest never
+             *  enumerates the account). */
+            pickOrCreate(): Promise<SecretRef[]>;
+            generateRandom(params: SecretGenerateParams): Promise<SecretGenerateResult>;
+            generateKeypair(params: SecretGenerateKeypairParams): Promise<SecretGenerateKeypairResult>;
+        };
+        stores: {
+            /** Opens the host's KV store picker so the user chooses existing store(s) — or creates a new
+             *  one inline. Only the selected/created { id, name } refs cross the bridge. */
+            pickOrCreate(): Promise<KvStoreRef[]>;
+        };
+    };
+
+    cdn: {
+        resources: {
+            list(): Promise<CdnResourceSummary[]>;
+            pick(): Promise<CdnResourcePickResult>;
+        };
+        origins: {
+            create(params: CdnOriginCreateParams): Promise<CdnOriginCreateResult>;
+            list(): Promise<CdnOriginSummary[]>;
+        };
+        rules: {
+            create(params: CdnRuleCreateParams): Promise<CdnRuleCreateResult>;
+            list(params: CdnRulesListParams): Promise<CdnRuleSummary[]>;
         };
     };
 
     deployment: {
         plan(params: DeploymentPlanParams): Promise<DeploymentPlan>;
         apply(params: { planId: string }): Promise<DeploymentApplyResult>;
+        /** Convenience: plan → onPlan? → apply (with progress events) → return result.
+         *  Handles the progress listener lifecycle — no need to call session.on manually. */
+        deploy(params: DeploymentPlanParams, options?: DeployOptions): Promise<DeploymentApplyResult>;
     };
 
     /** Subscribe to host-pushed events (doc 05 EventMessage). Returns an unsubscribe fn. */
@@ -101,6 +139,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class WizardSessionImpl implements WizardSession {
     readonly context: WizardSession['context'];
     readonly fastedge: WizardSession['fastedge'];
+    readonly cdn: WizardSession['cdn'];
     readonly deployment: WizardSession['deployment'];
 
     private readonly port: MessagePort;
@@ -126,14 +165,43 @@ export class WizardSessionImpl implements WizardSession {
                 link: (params) => this.invoke<AppLinkResult>('fastedge.apps.link', params),
             },
             secrets: {
-                list: () => this.invoke<SecretSummary[]>('fastedge.secrets.list', {}),
-                create: (params) => this.invoke<SecretRef>('fastedge.secrets.create', params),
-                pick: () => this.invoke<SecretRef[]>('fastedge.secrets.pick', {}),
+                pickOrCreate: () => this.invoke<SecretRef[]>('fastedge.secrets.pickOrCreate', {}),
+                generateRandom: (params) => this.invoke<SecretGenerateResult>('fastedge.secrets.generateRandom', params),
+                generateKeypair: (params) => this.invoke<SecretGenerateKeypairResult>('fastedge.secrets.generateKeypair', params),
+            },
+            stores: {
+                pickOrCreate: () => this.invoke<KvStoreRef[]>('fastedge.stores.pickOrCreate', {}),
+            },
+        };
+        this.cdn = {
+            resources: {
+                list: () => this.invoke<CdnResourceSummary[]>('cdn.resources.list', {}),
+                pick: () => this.invoke<CdnResourcePickResult>('cdn.resources.pick', {}),
+            },
+            origins: {
+                create: (params) => this.invoke<CdnOriginCreateResult>('cdn.origins.create', params),
+                list: () => this.invoke<CdnOriginSummary[]>('cdn.origins.list', {}),
+            },
+            rules: {
+                create: (params) => this.invoke<CdnRuleCreateResult>('cdn.rules.create', params),
+                list: (params) => this.invoke<CdnRuleSummary[]>('cdn.rules.list', params),
             },
         };
         this.deployment = {
             plan: (params) => this.invoke<DeploymentPlan>('deployment.plan', params),
             apply: (params) => this.invoke<DeploymentApplyResult>('deployment.apply', params),
+            deploy: async (params, options) => {
+                const plan = await this.invoke<DeploymentPlan>('deployment.plan', params);
+                options?.onPlan?.(plan);
+                const off = this.on('deployment.progress', (p) => {
+                    options?.onProgress?.(p as DeploymentProgressEvent);
+                });
+                try {
+                    return await this.invoke<DeploymentApplyResult>('deployment.apply', { planId: plan.planId });
+                } finally {
+                    off();
+                }
+            },
         };
 
         this.port.onmessage = (event) => this.handlePortMessage(event);
