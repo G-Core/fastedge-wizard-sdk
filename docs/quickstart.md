@@ -15,14 +15,14 @@ The portal sources wizards from an allow-listed GitHub repository. Your wizard i
 ## 1. Install the SDK
 
 ```sh
-npm install github:G-Core/fastedge-wizard-sdk#<tag>
+npm install @gcoredev/fastedge-wizard-sdk
 ```
 
 Or in `package.json`:
 
 ```json
 "dependencies": {
-  "@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#<tag>"
+  "@gcoredev/fastedge-wizard-sdk": "latest"
 }
 ```
 
@@ -31,7 +31,7 @@ Or in `package.json`:
 Call `connect` as early as possible. The portal delivers the handshake on page load; if you wait too long the 10 s timeout fires.
 
 ```js
-import { connect, WizardError } from '@gcore/fastedge-wizard-sdk';
+import { connect, WizardError } from '@gcoredev/fastedge-wizard-sdk';
 
 async function main() {
     let session;
@@ -95,7 +95,7 @@ For pickers and generate/create flows where a cancel is just "nothing selected",
 the SDK ships `optional()` so you don't repeat that try/catch at every call site:
 
 ```js
-import { optional } from '@gcore/fastedge-wizard-sdk';
+import { optional } from '@gcoredev/fastedge-wizard-sdk';
 
 const picked = await optional(() => session.fastedge.secrets.pickOrCreate());
 if (picked) set({ secret: picked }); // null when the user dismissed the dialog

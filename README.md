@@ -1,4 +1,4 @@
-# @gcore/fastedge-wizard-sdk
+# @gcoredev/fastedge-wizard-sdk
 
 Guest-side SDK for building **FastEdge wizard forms** that embed inside the Gcore FastEdge portal UI.
 
@@ -6,30 +6,24 @@ A wizard is a small web app (any framework, or plain HTML/JS) that the portal lo
 
 ## Install
 
-This package is not published to npm. Install directly from GitHub (requires read access to the repo):
+Published on npm (public):
 
 ```sh
-npm install github:G-Core/fastedge-wizard-sdk#<tag>
+npm install @gcoredev/fastedge-wizard-sdk
 ```
 
-Check the [releases page](https://github.com/G-Core/fastedge-wizard-sdk/releases) for the latest tag, or pin a specific commit:
-
-```sh
-npm install github:G-Core/fastedge-wizard-sdk#<commit-sha>
-```
-
-The import path stays the same — configure your `package.json` name alias if needed:
+Or in `package.json`:
 
 ```json
 "dependencies": {
-  "@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#<tag>"
+  "@gcoredev/fastedge-wizard-sdk": "latest"
 }
 ```
 
 ## Quickstart
 
 ```js
-import { connect } from '@gcore/fastedge-wizard-sdk';
+import { connect } from '@gcoredev/fastedge-wizard-sdk';
 
 const session = await connect({
   // Must exactly match the origin of the Gcore portal that hosts your wizard.
@@ -139,7 +133,7 @@ All bridge errors are thrown as `WizardError`, which extends `Error` and adds a 
 | `protocol_error` | Message version mismatch or session disposed |
 
 ```js
-import { WizardError } from '@gcore/fastedge-wizard-sdk';
+import { WizardError } from '@gcoredev/fastedge-wizard-sdk';
 
 try {
   await session.fastedge.apps.create(params);

@@ -1,0 +1,40 @@
+name: Publish to npm
+
+on:
+    push:
+        tags: ['v*.*.*']
+    workflow_dispatch:
+        inputs:
+            dry_run:
+                description: 'Dry run (build + pack, no publish)'
+                type: boolean
+                default: true
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write # OIDC → npm Trusted Publishing + provenance
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Setup Node Environment
+              uses: ./.github/setup-node
+
+            - name: Build
+              run: pnpm build
+
+            # A tag that disagrees with package.json publishes a lie — fail loud.
+            - name: Verify tag == package.json version
+              run: |
+                  pkg=$(node -p "require('./package.json').version")
+                  tag="${GITHUB_REF_NAME#v}"
+                  [ "$pkg" = "$tag" ] || { echo "tag v$tag != package.json $pkg"; exit 1; }
+
+            # No NODE_AUTH_TOKEN: auth comes from OIDC Trusted Publishing (configure the
+            # trusted publisher for @gcoredev/fastedge-wizard-sdk on npmjs.com first).
+            - name: Publish
+              run: >
+                  npm publish --provenance --access public
+                  ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
