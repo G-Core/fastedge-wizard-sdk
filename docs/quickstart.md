@@ -71,7 +71,7 @@ const apps = await session.fastedge.apps.list();
 
 ## 4. Write data (with user consent)
 
-Write intents (`apps.create`, `apps.update`, `secrets.generateRandom`, `deployment.apply`) trigger a consent dialog in the portal. The promise resolves once the user confirms and the action completes. If the user clicks Cancel, `WizardError` with code `user_cancelled` is thrown — handle this as a non-error UI state.
+Write intents (`apps.create`, `apps.update`, `secrets.generateRandom`, `secrets.generateKeypair`, `cdn.origins.create`, `cdn.rules.create`, `deployment.apply`) trigger a consent dialog in the portal. The promise resolves once the user confirms and the action completes. If the user clicks Cancel, `WizardError` with code `user_cancelled` is thrown — handle this as a non-error UI state.
 
 ```js
 try {

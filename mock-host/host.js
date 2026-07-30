@@ -209,7 +209,7 @@ function showPickerModal(id, intent) {
             : `<p class="empty-picker">No items available</p>`;
 
         body.onclick = e => {
-            const item = e.target.closest('.pi');
+            const item = e.target.closest?.('.pi');
             if (!item) return;
             body.querySelectorAll('.pi').forEach(el => el.classList.remove('sel'));
             item.classList.add('sel');

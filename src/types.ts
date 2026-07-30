@@ -2,7 +2,7 @@
  * Intent catalog shapes — all SDK-exposed namespaces fully typed.
  *
  * Mock host (`pnpm run dev`) simulates every intent across all namespaces —
- * `fastedge.*`, `cdn.*`, `stores.*`, `deployment.*` — using fixture data.
+ * `fastedge.*` (incl. `fastedge.stores.*`), `cdn.*`, `deployment.*` — using fixture data.
  * Build and test end-to-end locally without a live portal connection.
  */
 
@@ -256,7 +256,7 @@ export interface DeploymentPlanStore {
 export interface DeploymentPlanOrigin {
     ref: string;
     name: string;
-    appRef: string; // ref of an app in apps[]
+    appRef: string; // ref of an app in fastedgeApps[]
 }
 
 export interface DeploymentPlanRule {
@@ -264,9 +264,9 @@ export interface DeploymentPlanRule {
     name: string;
     rule: string;
     weight?: number;
-    originGroupRef?: string; // ref of an origin in newOrigins[]
+    originGroupRef?: string; // ref of an origin in newCdnOrigins[]
     fastedgeFilter?: {
-        appRef: string; // ref of an app in apps[]
+        appRef: string; // ref of an app in fastedgeApps[]
         hook: 'on_request_headers' | 'on_response_headers';
         interruptOnError?: boolean;
     };

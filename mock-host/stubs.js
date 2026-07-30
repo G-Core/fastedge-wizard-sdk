@@ -202,8 +202,9 @@ export function createPicked(intent, typedName) {
     st.seq += 1;
     const queued = st.queue.shift();
     const name = queued?.name ?? (typedName?.trim() || `new-${st.kind}-${st.seq}`);
-    const comment = queued?.comment;
-    return { id: st.base + st.seq, name, ...(comment ? { comment } : {}) };
+    // Return only { id, name } — the SecretRef/KvStoreRef contract. The seed's comment
+    // is for the picker list display (createRow), not the created ref handed to the wizard.
+    return { id: st.base + st.seq, name };
 }
 
 function createRow(intent) {
