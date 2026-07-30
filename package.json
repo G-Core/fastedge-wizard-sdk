@@ -17,7 +17,8 @@
     "files": [
         "dist",
         "bin",
-        "mock-host"
+        "mock-host",
+        "docs"
     ],
     "sideEffects": false,
     "scripts": {

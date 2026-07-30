@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import type { TemplateDetail, TemplateParam, AppDetail, SecretSummary } from './types.js';
+import type {
+    TemplateDetail,
+    TemplateParam,
+    AppDetail,
+    SecretSummary,
+    KvStoreSummary,
+    CdnResourceSummary,
+    CdnOriginSummary,
+    CdnRuleSummary,
+} from './types.js';
 
 // ── Sub-types ─────────────────────────────────────────────────────────────────
 
@@ -42,12 +51,59 @@ export const SecretSummarySchema: z.ZodType<SecretSummary> = z.object({
     comment: z.string().optional(),
 });
 
+export const KvStoreSummarySchema: z.ZodType<KvStoreSummary> = z.object({
+    id: z.number().int(),
+    name: z.string(),
+    comment: z.string().optional(),
+});
+
+export const CdnResourceSummarySchema: z.ZodType<CdnResourceSummary> = z.object({
+    id: z.number().int(),
+    cname: z.string(),
+    description: z.string().optional(),
+    status: z.string(),
+});
+
+export const CdnOriginSummarySchema: z.ZodType<CdnOriginSummary> = z.object({
+    id: z.number().int(),
+    name: z.string(),
+});
+
+const CdnFastedgeFilterSchema = z.object({
+    appId: z.number().int(),
+    hook: z.enum(['on_request_headers', 'on_response_headers']),
+});
+
+export const CdnRuleSummarySchema: z.ZodType<CdnRuleSummary> = z.object({
+    id: z.number().int(),
+    name: z.string(),
+    rule: z.string(),
+    weight: z.number().optional(),
+    originGroupId: z.number().int().optional(),
+    fastedgeFilter: CdnFastedgeFilterSchema.optional(),
+});
+
+// Optional seed queue for the mock host's inline "Create new" in {secrets,stores}.pickOrCreate.
+// Each entry is handed out (in order) as a created resource, so a scripted flow that creates
+// several resources gets stable, meaningful names without per-create prompts.
+const NewResourceSeedSchema = z.object({
+    name: z.string(),
+    comment: z.string().optional(),
+});
+
 // ── Fixture map — used by dev.mjs at startup ──────────────────────────────────
+// Keys are relative paths under fixtures/: 'fastedge/templates' → fixtures/fastedge/templates.json
 
 export const fixtureSchemas = {
-    templates: z.array(TemplateDetailSchema),
-    apps: z.array(AppDetailSchema),
-    secrets: z.array(SecretSummarySchema),
+    'fastedge/templates': z.array(TemplateDetailSchema),
+    'fastedge/apps': z.array(AppDetailSchema),
+    'fastedge/secrets': z.array(SecretSummarySchema),
+    'fastedge/stores': z.array(KvStoreSummarySchema),
+    'fastedge/new-secrets': z.array(NewResourceSeedSchema),
+    'fastedge/new-stores': z.array(NewResourceSeedSchema),
+    'cdn/resources': z.array(CdnResourceSummarySchema),
+    'cdn/origins': z.array(CdnOriginSummarySchema),
+    'cdn/rules': z.array(CdnRuleSummarySchema),
 } as const;
 
 export type FixtureName = keyof typeof fixtureSchemas;
