@@ -80,23 +80,26 @@ session.fastedge.apps.link(params): Promise<AppLinkResult>       // requires use
 
 #### `session.fastedge.secrets`
 
-Secrets never cross the bridge as plaintext — only `{ id, name }` refs do.
+Secrets never cross the bridge as plaintext — only `{ id, name, origin }` refs do (`origin` is `'picked'` | `'created'`).
 
 ```ts
-// Opens the portal's secret picker; the user selects existing secret(s) OR creates one inline.
-session.fastedge.secrets.pickOrCreate(): Promise<SecretRef[]>
-session.fastedge.secrets.generateRandom(params): Promise<SecretGenerateResult>      // host-generated random value
+// Opens the portal's secret picker; the user selects an existing secret OR creates one inline.
+// Pass { bytes } to arm the create-inline Generate button with a host-generated random value.
+session.fastedge.secrets.pickOrCreate(params?: { bytes?: number; name?: string; comment?: string }): Promise<SecretRef[]>
 session.fastedge.secrets.generateKeypair(params): Promise<SecretGenerateKeypairResult>  // ES256, returns publicKey
 ```
 
 #### `session.deployment`
 
-Plan-then-apply pattern. `plan` is a dry-run (no consent dialog); `apply` requires user consent and streams `deployment.progress` events.
+Plan-then-apply. `plan` is a dry-run (no consent dialog); `apply` requires user consent and streams `deployment.progress` events. `deploy` orchestrates both — it plans, calls `onPlan`, applies with the plan's id, forwards progress to `onProgress`, and tears the progress listener down afterwards (even if apply rejects). Prefer `deploy`.
 
 ```ts
 session.deployment.plan(params): Promise<DeploymentPlan>
 session.deployment.apply({ planId }): Promise<DeploymentApplyResult>
+session.deployment.deploy(params, options?: { onPlan?, onProgress? }): Promise<DeploymentApplyResult>
 ```
+
+The plan creates apps, CDN origins, and CDN rules — **not** secrets or stores. Create those eagerly with `secrets.pickOrCreate` / `secrets.generateKeypair` / `stores.pickOrCreate` and reference them by id in an app's `secretRefs` / `env`.
 
 #### `session.on(event, handler)`
 
@@ -153,7 +156,12 @@ try {
 
 ## Examples
 
-| Directory | What it shows |
+Worked examples live in the sibling **`fastedge-wizard-apps`** repo under `wizards/`:
+
+| Wizard | What it shows |
 |---|---|
-| [`examples/plain-html/`](examples/plain-html/index.html) | Minimal framework-agnostic wizard: handshake, `context.get`, `templates.list`, isolation proof |
-| [`examples/write-intents/`](examples/write-intents/index.html) | Full step-by-step smoke test of every write intent (`apps.*`, `secrets.*`, `deployment.*`) |
+| `_example/` | Minimal framework-agnostic wizard: handshake, `context.get`, `templates.list` |
+| `_example-intents/` | Step-by-step exercise of the full intent surface (`apps.*`, `secrets.*`, `stores.*`, `cdn.*`, `deployment.*`) |
+| `edge-totp/` | Canonical real wizard — two apps + CDN wiring, eager secrets/stores, `deployment.deploy` |
+
+For local dev (mock host, fixtures) see [`docs/quickstart.md`](docs/quickstart.md).

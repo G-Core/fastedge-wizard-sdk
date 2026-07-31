@@ -125,9 +125,24 @@ export interface SecretSummary {
     comment?: string;
 }
 
+/** How a picked/created ref was obtained: 'picked' (an existing account resource the user selected)
+ *  | 'created' (a new one made inline — value typed OR host-generated). Informational for the guest. */
+export type SecretRefOrigin = 'picked' | 'created';
+
 export interface SecretRef {
     id: number;
     name: string;
+    /** Optional — the guest may use it or ignore it. */
+    origin?: SecretRefOrigin;
+}
+
+/** Optional params for secrets.pickOrCreate. `bytes` arms the create-inline Generate button with a
+ *  host-made random value of that strength (replacing the old generateRandom); `name`/`comment`
+ *  pre-fill the create form. All optional — omit for a plain pick-or-paste. */
+export interface SecretPickOrCreateParams {
+    bytes?: number;
+    name?: string;
+    comment?: string;
 }
 
 // --- stores.* ---
@@ -141,20 +156,11 @@ export interface KvStoreSummary {
 export interface KvStoreRef {
     id: number;
     name: string;
+    /** Optional — guest may use or ignore. See SecretRefOrigin. */
+    origin?: SecretRefOrigin;
 }
 
-// --- secrets.generateRandom / generateKeypair ---
-
-export interface SecretGenerateParams {
-    name: string;
-    comment?: string;
-    bytes: number;
-}
-
-export interface SecretGenerateResult {
-    id: number;
-    name: string;
-}
+// --- secrets.generateKeypair ---
 
 export interface SecretGenerateKeypairParams {
     name: string;
@@ -247,12 +253,6 @@ export interface DeploymentPlanApp {
     secretRefs?: Record<string, number>;
 }
 
-export interface DeploymentPlanStore {
-    ref: string;
-    name?: string;
-    comment?: string;
-}
-
 export interface DeploymentPlanOrigin {
     ref: string;
     name: string;
@@ -275,8 +275,6 @@ export interface DeploymentPlanRule {
 export interface DeploymentPlanParams {
     fastedgeApps: DeploymentPlanApp[];
     sharedEnv?: Record<string, string>;
-    newFastedgeSecrets?: Array<{ ref: string; name: string }>;
-    newFastedgeStores?: DeploymentPlanStore[];
     cdnResourceId?: number;
     newCdnOrigins?: DeploymentPlanOrigin[];
     newCdnRules?: DeploymentPlanRule[];
@@ -287,8 +285,6 @@ export interface DeploymentPlanStep {
         | 'fastedge.apps.create'
         | 'fastedge.apps.set-env'
         | 'fastedge.apps.link'
-        | 'fastedge.secrets.create'
-        | 'fastedge.stores.create'
         | 'cdn.resources.pick'
         | 'cdn.origins.create'
         | 'cdn.rules.create';
@@ -304,7 +300,6 @@ export interface DeploymentPlan {
 
 export interface DeploymentApplyResult {
     createdFastedgeApps: Array<{ ref: string; id: number; url: string }>;
-    createdFastedgeStores?: Array<{ ref: string; id: number; name: string }>;
     createdCdnOrigins?: Array<{ ref: string; id: number; name: string }>;
     createdCdnRules?: Array<{ ref: string; id: number }>;
     status: 'complete' | 'rolled_back' | 'partial';

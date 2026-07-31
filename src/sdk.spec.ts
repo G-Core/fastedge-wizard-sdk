@@ -374,3 +374,107 @@ describe('theme — body class from HELLO', () => {
         expect(classList.has('gc-theme-light')).toBe(false);
     });
 });
+
+// ---------------------------------------------------------------------------
+// deployment.deploy() — plan → onPlan → progress → apply orchestration
+// ---------------------------------------------------------------------------
+
+interface IntentMsg {
+    type: string;
+    id: string;
+    intent: string;
+    params: unknown;
+}
+
+describe('deployment.deploy() — orchestration', () => {
+    // Flush the microtask queue so an awaited invoke's continuation runs (fake timers stay put).
+    const flush = async (): Promise<void> => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+    };
+
+    const sentIntents = (port: FakePort, intent: string): IntentMsg[] =>
+        port.postMessage.mock.calls
+            .map((c) => c[0] as IntentMsg)
+            .filter((m) => m?.type === 'intent' && m.intent === intent);
+
+    const resolveIntent = (port: FakePort, id: string, data: unknown): void => {
+        port.onmessage?.({ data: { v: WIZARD_PROTOCOL_VERSION, type: 'result', id, ok: true, data } });
+    };
+
+    const pushProgress = (port: FakePort, payload: unknown): void => {
+        port.onmessage?.({
+            data: { v: WIZARD_PROTOCOL_VERSION, type: 'event', event: 'deployment.progress', payload },
+        });
+    };
+
+    it('runs plan → onPlan → apply(planId), forwards progress, and unsubscribes after success', async () => {
+        const { session, port } = await completeHandshake();
+        const onPlan = vi.fn();
+        const onProgress = vi.fn();
+
+        const deployPromise = session.deployment.deploy({ fastedgeApps: [] }, { onPlan, onProgress });
+
+        // plan intent is sent immediately; onPlan/apply wait for it to resolve.
+        const planMsg = sentIntents(port, 'deployment.plan').at(-1) as IntentMsg;
+        expect(onPlan).not.toHaveBeenCalled();
+        expect(sentIntents(port, 'deployment.apply')).toHaveLength(0);
+
+        resolveIntent(port, planMsg.id, { planId: 'plan-1', summary: 's', steps: [], warnings: [] });
+        await flush();
+
+        // onPlan fired exactly once with the resolved plan, before apply.
+        expect(onPlan).toHaveBeenCalledTimes(1);
+        expect(onPlan).toHaveBeenCalledWith(expect.objectContaining({ planId: 'plan-1' }));
+
+        // apply was invoked with the plan's planId.
+        const applyMsg = sentIntents(port, 'deployment.apply').at(-1) as IntentMsg;
+        expect(applyMsg.params).toEqual({ planId: 'plan-1' });
+
+        // progress events are forwarded to onProgress while apply is in flight.
+        pushProgress(port, { step: 1, total: 2, describe: 'creating app' });
+        expect(onProgress).toHaveBeenCalledWith({ step: 1, total: 2, describe: 'creating app' });
+
+        // apply resolves → deploy resolves with the apply result.
+        resolveIntent(port, applyMsg.id, { createdFastedgeApps: [], status: 'complete' });
+        await expect(deployPromise).resolves.toMatchObject({ status: 'complete' });
+
+        // progress listener torn down — later events are no longer forwarded.
+        onProgress.mockClear();
+        pushProgress(port, { step: 2, total: 2, describe: 'late' });
+        expect(onProgress).not.toHaveBeenCalled();
+    });
+
+    it('unsubscribes the progress listener even when apply rejects (finally path)', async () => {
+        const { session, port } = await completeHandshake();
+        const onProgress = vi.fn();
+
+        const deployPromise = session.deployment.deploy({ fastedgeApps: [] }, { onProgress });
+
+        resolveIntent(port, (sentIntents(port, 'deployment.plan').at(-1) as IntentMsg).id, {
+            planId: 'plan-2',
+            summary: '',
+            steps: [],
+            warnings: [],
+        });
+        await flush();
+
+        const applyMsg = sentIntents(port, 'deployment.apply').at(-1) as IntentMsg;
+        port.onmessage?.({
+            data: {
+                v: WIZARD_PROTOCOL_VERSION,
+                type: 'result',
+                id: applyMsg.id,
+                ok: false,
+                error: { code: 'upstream_error', message: 'boom' },
+            },
+        });
+
+        await expect(deployPromise).rejects.toMatchObject({ code: 'upstream_error' });
+
+        // off() ran in finally — a progress event after settle is not forwarded.
+        pushProgress(port, { step: 9, total: 9, describe: 'late' });
+        expect(onProgress).not.toHaveBeenCalled();
+    });
+});

@@ -24,8 +24,7 @@ import type {
     AppLinkParams,
     AppLinkResult,
     SecretRef,
-    SecretGenerateParams,
-    SecretGenerateResult,
+    SecretPickOrCreateParams,
     SecretGenerateKeypairParams,
     SecretGenerateKeypairResult,
     KvStoreRef,
@@ -84,8 +83,7 @@ export interface WizardSession {
             /** Opens the host's secret picker so the user chooses existing secret(s) — or creates a new
              *  one inline. Only the selected/created { id, name } refs cross the bridge (the guest never
              *  enumerates the account). */
-            pickOrCreate(): Promise<SecretRef[]>;
-            generateRandom(params: SecretGenerateParams): Promise<SecretGenerateResult>;
+            pickOrCreate(params?: SecretPickOrCreateParams): Promise<SecretRef[]>;
             generateKeypair(params: SecretGenerateKeypairParams): Promise<SecretGenerateKeypairResult>;
         };
         stores: {
@@ -165,8 +163,7 @@ export class WizardSessionImpl implements WizardSession {
                 link: (params) => this.invoke<AppLinkResult>('fastedge.apps.link', params),
             },
             secrets: {
-                pickOrCreate: () => this.invoke<SecretRef[]>('fastedge.secrets.pickOrCreate', {}),
-                generateRandom: (params) => this.invoke<SecretGenerateResult>('fastedge.secrets.generateRandom', params),
+                pickOrCreate: (params) => this.invoke<SecretRef[]>('fastedge.secrets.pickOrCreate', params ?? {}),
                 generateKeypair: (params) => this.invoke<SecretGenerateKeypairResult>('fastedge.secrets.generateKeypair', params),
             },
             stores: {

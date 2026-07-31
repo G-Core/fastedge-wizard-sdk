@@ -2,7 +2,6 @@ export const WRITE_INTENTS = new Set([
     'fastedge.apps.create',
     'fastedge.apps.update',
     'fastedge.apps.link',
-    'fastedge.secrets.generateRandom',
     'fastedge.secrets.generateKeypair',
     'cdn.origins.create',
     'cdn.rules.create',
@@ -385,8 +384,6 @@ export function stub(intent, params, theme) {
             return { id: params?.id ?? 101, status: 1 };
         case 'fastedge.apps.link':
             return { updated: Array.isArray(params?.appIds) ? params.appIds : [] };
-        case 'fastedge.secrets.generateRandom':
-            return { id: 302, name: params?.name ?? 'generated-secret' };
         case 'fastedge.secrets.generateKeypair':
             return {
                 id: 303,
@@ -400,7 +397,6 @@ export function stub(intent, params, theme) {
         case 'deployment.apply':
             return {
                 createdFastedgeApps: [{ ref: 'app-1', id: 201, url: 'https://new-app-201.fastedge.gcorelabs.net' }],
-                createdFastedgeStores: [],
                 createdCdnOrigins: [],
                 createdCdnRules: [],
                 status: 'complete',

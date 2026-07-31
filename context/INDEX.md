@@ -7,15 +7,14 @@ perform the `MessageChannel` handshake with the portal host, then use the
 returned `WizardSession` to invoke bridge intents (`fastedge.apps.*`,
 `fastedge.secrets.*`, `deployment.*`, `context.get`).
 
-Full API reference: `README.md`. Protocol spec: `fastedge-frontend/docs/wizards/05-bridge-protocol.md`.
+Full API reference: `README.md`. The underlying bridge/protocol spec is Gcore-maintained internally; wizard authors code against this SDK, not the wire protocol.
 
 ---
 
 ## Current State
 
-This is a **standalone git repository** (`G-Core/fastedge-wizard-sdk`), checked
-out at `~/dev/gcore/fe/fastedge-frontend/fastedge-wizard-sdk/`. It is published
-to npm as **`@gcoredev/fastedge-wizard-sdk`** (public, with provenance):
+This is a **standalone public git repository** (`G-Core/fastedge-wizard-sdk`),
+published to npm as **`@gcoredev/fastedge-wizard-sdk`** (public, with provenance):
 
 - `name`: `@gcoredev/fastedge-wizard-sdk`
 - `exports` + `types` point to `dist/`
@@ -32,7 +31,7 @@ Consumers install from npm:
 
 ## How `fastedge-wizard-apps` Consumes This SDK
 
-Each wizard in `G-Core/FastEdge-Wizard-apps` (and in Orange's repo) has:
+Each wizard in `G-Core/FastEdge-Wizard-apps` (and any allow-listed partner repo) has:
 
 ```json
 "dependencies": {
@@ -41,12 +40,11 @@ Each wizard in `G-Core/FastEdge-Wizard-apps` (and in Orange's repo) has:
 ```
 
 The wizard's build step (`esbuild src/main.js --bundle --format=esm --outfile=main.js`)
-bundles the SDK into a single `main.js` that is committed to the repo and served
-via GitHub Pages / jsDelivr. The proxy enforces `connect-src 'none'` — no
-runtime SDK fetch is possible, so bundling is mandatory.
+bundles the SDK into a single `main.js`. Source only is committed; CI builds each
+wizard and publishes the output, which jsDelivr serves. The proxy enforces
+`connect-src 'none'` — no runtime SDK fetch is possible, so bundling is mandatory.
 
-**Orange's repo follows the exact same pattern.** They install the same SDK
-package, run the same build, commit their own bundle.
+Partner repos follow the exact same pattern — same SDK package, same build.
 
 ---
 
@@ -71,12 +69,12 @@ matter.
 ## Local Development — SDK + Wizard Together
 
 When iterating on the SDK and a wizard simultaneously, use pnpm's `file:`
-protocol to point the wizard at your local SDK checkout instead of the GitHub
-ref. From the wizard directory:
+protocol to point the wizard at your local SDK checkout instead of the npm
+package. From the wizard directory (adjust the path to wherever you cloned the SDK):
 
 ```bash
-# Temporarily override the dep to the local checkout
-pnpm add file:../../../../fe/fastedge-frontend/fastedge-wizard-sdk
+# Temporarily override the dep to your local checkout
+pnpm add file:/path/to/fastedge-wizard-sdk
 
 # When done, restore the npm dep
 pnpm add @gcoredev/fastedge-wizard-sdk@latest

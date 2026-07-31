@@ -40,7 +40,6 @@ export const INTENT_NAMES = [
     'fastedge.apps.update',
     'fastedge.apps.link',
     'fastedge.secrets.pickOrCreate',
-    'fastedge.secrets.generateRandom',
     'fastedge.secrets.generateKeypair',
     'fastedge.stores.pickOrCreate',
     'cdn.resources.list',
