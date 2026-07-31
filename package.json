@@ -2,6 +2,10 @@
     "name": "@gcoredev/fastedge-wizard-sdk",
     "version": "0.0.2",
     "description": "Guest-side SDK for FastEdge wizards to talk to the host portal over the wizard bridge protocol.",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/G-Core/fastedge-wizard-sdk.git"
+    },
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -12,7 +16,7 @@
         }
     },
     "bin": {
-        "fastedge-wizard-dev": "./bin/dev.mjs"
+        "fastedge-wizard-dev": "bin/dev.mjs"
     },
     "files": [
         "dist",
