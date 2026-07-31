@@ -53,53 +53,25 @@ Throws `WizardError` with code `timeout` if the portal doesn't complete the hand
 
 ### `WizardSession`
 
-#### `context`
+The full, always-current surface is the **`WizardSession` interface in [`src/sdk.ts`](src/sdk.ts)** (the method tree) and the **param/result types in [`src/types.ts`](src/types.ts)**. Both are re-exported from the package, so your editor shows every signature and its doc comment the moment you `import`. Those files are the canonical contract — the map below is orientation, not an exhaustive signature list.
 
-```ts
-session.context.get(): Promise<WizardContext>
-```
+| Namespace | Purpose |
+|---|---|
+| `session.context` | Locale, theme, the wizard's own app ID, managed app IDs, feature flags |
+| `session.fastedge.templates` | List / read FastEdge templates |
+| `session.fastedge.apps` | List / get / create / update / link apps |
+| `session.fastedge.secrets` | Pick-or-create secrets, generate ES256 keypairs |
+| `session.fastedge.stores` | Pick-or-create KV stores |
+| `session.cdn.resources` | List / pick CDN resources |
+| `session.cdn.origins` | List / create CDN origin groups |
+| `session.cdn.rules` | List / create CDN rules |
+| `session.deployment` | Plan-then-apply — **prefer `deploy()`** |
 
-Returns the current wizard context — locale, theme, the wizard's own app ID, IDs of apps it manages, and enabled feature flags.
+Behaviours the types don't spell out:
 
-#### `session.fastedge.templates`
-
-```ts
-session.fastedge.templates.list(params?: { apiType?: 'wasi-http' | 'proxy-wasm' }): Promise<TemplateSummary[]>
-session.fastedge.templates.read({ id: number }): Promise<TemplateDetail>
-```
-
-#### `session.fastedge.apps`
-
-```ts
-session.fastedge.apps.list(): Promise<AppSummary[]>          // only wizard-managed apps
-session.fastedge.apps.get({ id }): Promise<AppDetail>
-session.fastedge.apps.create(params): Promise<AppCreateResult>   // requires user consent
-session.fastedge.apps.update(params): Promise<AppUpdateResult>   // requires user consent
-session.fastedge.apps.link(params): Promise<AppLinkResult>       // requires user consent
-```
-
-#### `session.fastedge.secrets`
-
-Secrets never cross the bridge as plaintext — only `{ id, name, origin }` refs do (`origin` is `'picked'` | `'created'`).
-
-```ts
-// Opens the portal's secret picker; the user selects an existing secret OR creates one inline.
-// Pass { bytes } to arm the create-inline Generate button with a host-generated random value.
-session.fastedge.secrets.pickOrCreate(params?: { bytes?: number; name?: string; comment?: string }): Promise<SecretRef[]>
-session.fastedge.secrets.generateKeypair(params): Promise<SecretGenerateKeypairResult>  // ES256, returns publicKey
-```
-
-#### `session.deployment`
-
-Plan-then-apply. `plan` is a dry-run (no consent dialog); `apply` requires user consent and streams `deployment.progress` events. `deploy` orchestrates both — it plans, calls `onPlan`, applies with the plan's id, forwards progress to `onProgress`, and tears the progress listener down afterwards (even if apply rejects). Prefer `deploy`.
-
-```ts
-session.deployment.plan(params): Promise<DeploymentPlan>
-session.deployment.apply({ planId }): Promise<DeploymentApplyResult>
-session.deployment.deploy(params, options?: { onPlan?, onProgress? }): Promise<DeploymentApplyResult>
-```
-
-The plan creates apps, CDN origins, and CDN rules — **not** secrets or stores. Create those eagerly with `secrets.pickOrCreate` / `secrets.generateKeypair` / `stores.pickOrCreate` and reference them by id in an app's `secretRefs` / `env`.
+- **Consent-gated writes** — `apps.create` / `apps.update` / `apps.link`, `cdn.origins.create`, and `cdn.rules.create` open a portal consent dialog; a user cancel throws `WizardError` with code `user_cancelled`. Pickers (`secrets.pickOrCreate`, `stores.pickOrCreate`, `cdn.resources.pick`) are consent points too.
+- **Refs only, never plaintext** — secrets and KV stores cross the bridge as `{ id, name }` refs (secrets add an `origin` of `'picked'` | `'created'`); the guest never sees a secret value or enumerates the account.
+- **Deployment scope** — `plan` / `deploy` create apps, CDN origins, and CDN rules, **not** secrets or stores. Create those eagerly with `secrets.pickOrCreate` / `secrets.generateKeypair` / `stores.pickOrCreate` and reference them by id. `deploy` plans, applies, streams `deployment.progress`, and tears the listener down afterwards (even if apply rejects) — prefer it over `plan` + `apply`.
 
 #### `session.on(event, handler)`
 
