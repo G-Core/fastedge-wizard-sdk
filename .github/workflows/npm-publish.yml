@@ -29,7 +29,9 @@ jobs:
               run: pnpm test
 
             # A tag that disagrees with package.json publishes a lie — fail loud.
+            # Only meaningful for tag pushes; a manual dry run from a branch has no version tag.
             - name: Verify tag == package.json version
+              if: github.event_name == 'push'
               run: |
                   pkg=$(node -p "require('./package.json').version")
                   tag="${GITHUB_REF_NAME#v}"

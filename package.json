@@ -1,6 +1,6 @@
 {
     "name": "@gcoredev/fastedge-wizard-sdk",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "Guest-side SDK for FastEdge wizards to talk to the host portal over the wizard bridge protocol.",
     "type": "module",
     "main": "./dist/index.js",
