@@ -149,7 +149,7 @@ function dispatch({ id, intent, params }) {
         send(id, true, result);
         log('✅', `${intent} → ok`, 'ok', result);
     } else if (PICKER_INTENTS.has(intent)) {
-        showPickerModal(id, intent);
+        showPickerModal(id, intent, params);
     } else if (WRITE_INTENTS.has(intent)) {
         showConsentModal(id, intent, params);
     } else {
@@ -192,7 +192,9 @@ function pickerResult(intent, parsedValue) {
     return (intent === 'cdn.resources.pick') ? parsedValue : [parsedValue];
 }
 
-function showPickerModal(id, intent) {
+// params (secrets.pickOrCreate only): { bytes?, name?, comment? } — bytes arms a
+// host-generated value, name/comment pre-fill the inline create form.
+function showPickerModal(id, intent, params = {}) {
     enqueueModal(() => {
         const options = getPickerOptions(intent);
         let selectedIdx = 0;
@@ -233,7 +235,14 @@ function showPickerModal(id, intent) {
                 if (info.seeded) {
                     ref = createPicked(intent);
                 } else {
-                    const typed = prompt(`Name for the new ${info.kind}:`, info.nextName);
+                    // params from pickOrCreate pre-fill the create form: name seeds the default,
+                    // bytes/comment surface in the label so the host-side behaviour is exercisable.
+                    const hints = [
+                        params.bytes ? `value auto-generated, ${params.bytes} bytes` : null,
+                        params.comment ? `comment: "${params.comment}"` : null,
+                    ].filter(Boolean).join(' · ');
+                    const label = `Name for the new ${info.kind}${hints ? ` (${hints})` : ''}:`;
+                    const typed = prompt(label, params.name ?? info.nextName);
                     if (typed === null) { closeModal(); deny(id, intent); return; } // cancelled create
                     ref = createPicked(intent, typed);
                 }

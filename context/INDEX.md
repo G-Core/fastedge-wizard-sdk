@@ -7,84 +7,77 @@ perform the `MessageChannel` handshake with the portal host, then use the
 returned `WizardSession` to invoke bridge intents (`fastedge.apps.*`,
 `fastedge.secrets.*`, `deployment.*`, `context.get`).
 
-Full API reference: `README.md`. Protocol spec: `fastedge-frontend/docs/wizards/05-bridge-protocol.md`.
+Full API reference: `README.md`. The underlying bridge/protocol spec is Gcore-maintained internally; wizard authors code against this SDK, not the wire protocol.
 
 ---
 
 ## Current State
 
-This is a **standalone git repository** (`G-Core/fastedge-wizard-sdk`), checked
-out at `~/dev/gcore/fe/fastedge-frontend/fastedge-wizard-sdk/`. The
-`package.json` is already correctly structured for external consumption:
+This is a **standalone public git repository** (`G-Core/fastedge-wizard-sdk`),
+published to npm as **`@gcoredev/fastedge-wizard-sdk`** (public, with provenance):
 
-- `name`: `@gcore/fastedge-wizard-sdk`
+- `name`: `@gcoredev/fastedge-wizard-sdk`
 - `exports` + `types` point to `dist/`
-- `files: ["dist"]`
-- `prepare` script: runs `tsc` on `pnpm install` / `npm install` so `github:`
-  installs get a built `dist/` automatically
+- `files`: `["dist", "bin", "mock-host", "docs"]`
+- `build` script: runs `tsc` → `dist/` (built in CI before publish)
 
-**No npm publish is needed.** Consumers install via the GitHub ref:
+Consumers install from npm:
 
 ```json
-"@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#v0.1.0"
+"@gcoredev/fastedge-wizard-sdk": "latest"
 ```
 
 ---
 
 ## How `fastedge-wizard-apps` Consumes This SDK
 
-Each wizard in `G-Core/FastEdge-Wizard-apps` (and in Orange's repo) has:
+Each wizard in `G-Core/FastEdge-Wizard-apps` (and any allow-listed partner repo) has:
 
 ```json
 "dependencies": {
-  "@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#<tag>"
+  "@gcoredev/fastedge-wizard-sdk": "latest"
 }
 ```
 
 The wizard's build step (`esbuild src/main.js --bundle --format=esm --outfile=main.js`)
-bundles the SDK into a single `main.js` that is committed to the repo and served
-via GitHub Pages / jsDelivr. The proxy enforces `connect-src 'none'` — no
-runtime SDK fetch is possible, so bundling is mandatory.
+bundles the SDK into a single `main.js`. Source only is committed; CI builds each
+wizard and publishes the output, which jsDelivr serves. The proxy enforces
+`connect-src 'none'` — no runtime SDK fetch is possible, so bundling is mandatory.
 
-**Orange's repo follows the exact same pattern.** They install the same SDK
-package, run the same build, commit their own bundle.
+Partner repos follow the exact same pattern — same SDK package, same build.
 
 ---
 
 ## Versioning
 
-Tag releases on `main` before wizard repos pin to them:
+Releases publish to npm from CI on a `v*.*.*` tag push
+(`.github/workflows/npm-publish.yml`):
 
 ```bash
-git tag v0.0.9   # increment from current v0.0.8
-git push origin v0.0.9
+npm version patch        # bumps package.json + creates the vX.Y.Z tag
+git push --follow-tags   # tag push → workflow builds + npm publish
 ```
 
-Wizard repos then update their dep ref and rebuild:
+CI fails the publish if the tag doesn't match `package.json` version.
 
-```json
-"@gcore/fastedge-wizard-sdk": "github:G-Core/fastedge-wizard-sdk#v0.0.9"
-```
-
-**Current published tag**: `v0.0.8` (hosted at `godronus/fastedge-wizard-sdk` during development; will move to `G-Core/` org before wider rollout).
-
-Pin to a tag (not `#main`) in any committed `package.json` so builds are
-reproducible. `#main` is fine during active development only.
+Wizard repos track `"latest"`, so a fresh `pnpm install` picks up the newest
+release. Pin to `^0.0.1` (or rely on the lockfile) where reproducible builds
+matter.
 
 ---
 
 ## Local Development — SDK + Wizard Together
 
 When iterating on the SDK and a wizard simultaneously, use pnpm's `file:`
-protocol to point the wizard at your local SDK checkout instead of the GitHub
-ref. From the wizard directory:
+protocol to point the wizard at your local SDK checkout instead of the npm
+package. From the wizard directory (adjust the path to wherever you cloned the SDK):
 
 ```bash
-# Temporarily override the dep to the local checkout
-pnpm add file:../../../../fe/fastedge-frontend/fastedge-wizard-sdk
+# Temporarily override the dep to your local checkout
+pnpm add file:/path/to/fastedge-wizard-sdk
 
-# When done, restore the pinned github: ref
-pnpm add github:G-Core/fastedge-wizard-sdk#<tag>
+# When done, restore the npm dep
+pnpm add @gcoredev/fastedge-wizard-sdk@latest
 ```
 
 The SDK must be built (`pnpm build` in the SDK dir) before the wizard can use
@@ -92,17 +85,16 @@ it via `file:` — `dist/` is not committed to this repo.
 
 ---
 
-## Future: npm Publish
+## Publishing (npm)
 
-If the `github:` install approach becomes a bottleneck (slow CI, private repo
-access issues for new partners), publishing to npm is straightforward:
+Published to npm as `@gcoredev/fastedge-wizard-sdk` via
+`.github/workflows/npm-publish.yml` on a `v*.*.*` tag push:
 
-1. Add `NPM_TOKEN` secret to the repo
-2. Add a GitHub Actions workflow: on tag push → `npm publish`
-3. Consumers switch to `"@gcore/fastedge-wizard-sdk": "^0.1.0"`
-
-The `package.json` is already publish-ready. This step is deferred until there
-is a concrete reason to do it.
+- **Auth**: npm Trusted Publishing (OIDC) — no `NPM_TOKEN` secret. The trusted
+  publisher is configured on npmjs.com (repo `G-Core/fastedge-wizard-sdk`,
+  workflow `npm-publish.yml`).
+- **Provenance**: `npm publish --provenance --access public` (needs `id-token: write`).
+- The workflow guards that the pushed tag matches `package.json` version.
 
 ---
 

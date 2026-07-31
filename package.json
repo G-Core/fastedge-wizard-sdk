@@ -1,6 +1,6 @@
 {
-    "name": "@gcore/fastedge-wizard-sdk",
-    "version": "0.0.1",
+    "name": "@gcoredev/fastedge-wizard-sdk",
+    "version": "0.0.2",
     "description": "Guest-side SDK for FastEdge wizards to talk to the host portal over the wizard bridge protocol.",
     "type": "module",
     "main": "./dist/index.js",
@@ -22,7 +22,6 @@
     ],
     "sideEffects": false,
     "scripts": {
-        "prepare": "node scripts/gen-version.mjs && tsc -p tsconfig.json",
         "build": "node scripts/gen-version.mjs && tsc -p tsconfig.json",
         "clean": "rm -rf dist",
         "typecheck": "tsc -p tsconfig.json --noEmit",
