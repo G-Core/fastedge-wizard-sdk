@@ -61,7 +61,7 @@ The full, always-current surface is the **`WizardSession` interface in [`src/sdk
 | `session.fastedge.templates` | List / read FastEdge templates |
 | `session.fastedge.apps` | List / get / create / update / link apps |
 | `session.fastedge.secrets` | Pick-or-create secrets, generate ES256 keypairs |
-| `session.fastedge.stores` | Pick-or-create KV stores |
+| `session.fastedge.stores` | Pick-or-create Edge Storage (KV) instances |
 | `session.cdn.resources` | List / pick CDN resources |
 | `session.cdn.origins` | List / create CDN origin groups |
 | `session.cdn.rules` | List / create CDN rules |
@@ -70,7 +70,7 @@ The full, always-current surface is the **`WizardSession` interface in [`src/sdk
 Behaviours the types don't spell out:
 
 - **Consent-gated writes** — `apps.create` / `apps.update` / `apps.link`, `cdn.origins.create`, and `cdn.rules.create` open a portal consent dialog; a user cancel throws `WizardError` with code `user_cancelled`. Pickers (`secrets.pickOrCreate`, `stores.pickOrCreate`, `cdn.resources.pick`) are consent points too.
-- **Refs only, never plaintext** — secrets and KV stores cross the bridge as `{ id, name }` refs (secrets add an `origin` of `'picked'` | `'created'`); the guest never sees a secret value or enumerates the account.
+- **Refs only, never plaintext** — secrets and Edge Storage instances cross the bridge as `{ id, name }` refs, both with an optional `origin` of `'picked'` | `'created'`; the guest never sees a secret value or enumerates the account.
 - **Deployment scope** — `plan` / `deploy` create apps, CDN origins, and CDN rules, **not** secrets or stores. Create those eagerly with `secrets.pickOrCreate` / `secrets.generateKeypair` / `stores.pickOrCreate` and reference them by id. `deploy` plans, applies, streams `deployment.progress`, and tears the listener down afterwards (even if apply rejects) — prefer it over `plan` + `apply`.
 
 #### `session.on(event, handler)`
