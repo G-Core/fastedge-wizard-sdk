@@ -160,7 +160,7 @@ await session.fastedge.apps.create({
 });
 ```
 
-The same call covers KV stores via `session.fastedge.stores.pickOrCreate()`.
+The same call covers Edge Storage via `session.fastedge.stores.pickOrCreate()`.
 
 **Local dev tip:** in the mock host, choosing "➕ Create new…" prompts you for a name (pre-filled
 with an indexed default). For flows that create several resources — where per-create prompts get

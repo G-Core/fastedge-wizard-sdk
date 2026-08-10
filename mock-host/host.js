@@ -192,14 +192,20 @@ function pickerResult(intent, parsedValue) {
     return (intent === 'cdn.resources.pick') ? parsedValue : [parsedValue];
 }
 
-// params (secrets.pickOrCreate only): { bytes?, name?, comment? } — bytes arms a
-// host-generated value, name/comment pre-fill the inline create form.
-function showPickerModal(id, intent, params = {}) {
+// params (secrets.pickOrCreate only): { bytes?, name?, comment?, label? } — bytes arms a
+// host-generated value, name/comment pre-fill the inline create form, label is shown in
+// the modal header so it's clear what the picked secret is for.
+function showPickerModal(id, intent, params) {
+    // Callers are untyped JS — normalize so a null/non-object params can't throw below.
+    params = params && typeof params === 'object' ? params : {};
+    const label = typeof params.label === 'string' ? params.label.trim() : '';
+
     enqueueModal(() => {
         const options = getPickerOptions(intent);
         let selectedIdx = 0;
 
-        document.getElementById('modal-head').textContent = PICKER_LABELS[intent] ?? intent;
+        const heading = PICKER_LABELS[intent] ?? intent;
+        document.getElementById('modal-head').textContent = label ? `${heading} — ${label}` : heading;
 
         const body = document.getElementById('modal-body');
         body.innerHTML = options.length

@@ -138,11 +138,14 @@ export interface SecretRef {
 
 /** Optional params for secrets.pickOrCreate. `bytes` arms the create-inline Generate button with a
  *  host-made random value of that strength (replacing the old generateRandom); `name`/`comment`
- *  pre-fill the create form. All optional — omit for a plain pick-or-paste. */
+ *  pre-fill the create form. `label` is shown in the picker dialog so the user knows what they're
+ *  selecting a secret for (e.g. "Handoff key") — purely cosmetic, never sent to the create form.
+ *  All optional — omit for a plain pick-or-paste. */
 export interface SecretPickOrCreateParams {
     bytes?: number;
     name?: string;
     comment?: string;
+    label?: string;
 }
 
 // --- stores.* ---
