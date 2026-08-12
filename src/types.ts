@@ -81,9 +81,8 @@ export interface AppCreateParams {
     source: { fromTemplateId: number } | { binaryId: number };
     env?: Record<string, string>;
     secretRefs?: Record<string, number>;
-    /** Binds a KV store (from stores.pickOrCreate) to a `store`-type template param, keyed by
-     *  param name → store id. Grants the app's fastedge::kv binding access — env vars alone
-     *  never do this (see docs/quickstart.md "KV store binding"). */
+/** Binds a KV store (selected via `fastedge.stores.pickOrCreate`) to a `store`-type template param,
+ *  keyed by param name → store id. */
     storeRefs?: Record<string, number>;
     rsp_headers?: Record<string, string>;
     comment?: string;
