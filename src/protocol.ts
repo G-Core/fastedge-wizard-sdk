@@ -50,6 +50,7 @@ export const INTENT_NAMES = [
     'cdn.rules.list',
     'deployment.plan',
     'deployment.apply',
+    'wizard.finish',
 ] as const;
 export type IntentName = (typeof INTENT_NAMES)[number];
 

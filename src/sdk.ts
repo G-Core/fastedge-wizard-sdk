@@ -116,6 +116,12 @@ export interface WizardSession {
         deploy(params: DeploymentPlanParams, options?: DeployOptions): Promise<DeploymentApplyResult>;
     };
 
+    wizard: {
+        /** Tell the host the wizard is done — the host closes it and navigates back to
+         *  wherever it was launched from. Call once the wizard has nothing left to do. */
+        finish(): Promise<void>;
+    };
+
     /** Subscribe to host-pushed events (doc 05 EventMessage). Returns an unsubscribe fn. */
     on(event: string, handler: (payload: unknown) => void): () => void;
 
@@ -139,6 +145,7 @@ export class WizardSessionImpl implements WizardSession {
     readonly fastedge: WizardSession['fastedge'];
     readonly cdn: WizardSession['cdn'];
     readonly deployment: WizardSession['deployment'];
+    readonly wizard: WizardSession['wizard'];
 
     private readonly port: MessagePort;
     private readonly pending = new Map<string, PendingIntent>();
@@ -199,6 +206,9 @@ export class WizardSessionImpl implements WizardSession {
                     off();
                 }
             },
+        };
+        this.wizard = {
+            finish: () => this.invoke<void>('wizard.finish', {}),
         };
 
         this.port.onmessage = (event) => this.handlePortMessage(event);
