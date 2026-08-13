@@ -17,11 +17,11 @@ jobs:
 
         steps:
             - name: Checkout repository
-              uses: actions/checkout@v6
+              uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.0.0
 
             - name: Install FOSSA CLI
               run: |
-                  curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash
+                  curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/19280416e725065f1a5d3061484571592ea89483/install-latest.sh | bash -s -- v3.17.16
 
             - name: Set FOSSA API Key
               run: echo "FOSSA_API_KEY=${{ secrets.FOSSA_PUB_API_KEY }}" >> $GITHUB_ENV
