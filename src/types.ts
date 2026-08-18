@@ -280,12 +280,33 @@ export interface DeploymentPlanRule {
     };
 }
 
+/** A single hook binding within DeploymentPlanFastedgeHandlers. `interruptOnError` defaults to false. */
+export interface DeploymentPlanFastedgeHandlerBinding {
+    appRef: string; // ref of an app in fastedgeApps[]
+    interruptOnError?: boolean;
+}
+
+/**
+ * Resource-level FastEdge handler assignment — distinct from DeploymentPlanRule.fastedgeFilter,
+ * which is scoped to one CDN path rule and only supports the two headers hooks. This is a PATCH
+ * on the CDN resource's own `options.fastedge`, and is the only way to reach on_request_body /
+ * on_response_body. Each hook may bind a different app — separate templates/apps per hook stage
+ * are supported. At least one hook must be present.
+ */
+export interface DeploymentPlanFastedgeHandlers {
+    on_request_headers?: DeploymentPlanFastedgeHandlerBinding;
+    on_request_body?: DeploymentPlanFastedgeHandlerBinding;
+    on_response_headers?: DeploymentPlanFastedgeHandlerBinding;
+    on_response_body?: DeploymentPlanFastedgeHandlerBinding;
+}
+
 export interface DeploymentPlanParams {
     fastedgeApps: DeploymentPlanApp[];
     sharedEnv?: Record<string, string>;
     cdnResourceId?: number;
     newCdnOrigins?: DeploymentPlanOrigin[];
     newCdnRules?: DeploymentPlanRule[];
+    cdnResourceFastedgeHandlers?: DeploymentPlanFastedgeHandlers;
 }
 
 export interface DeploymentPlanStep {
@@ -294,6 +315,7 @@ export interface DeploymentPlanStep {
         | 'fastedge.apps.set-env'
         | 'fastedge.apps.link'
         | 'cdn.resources.pick'
+        | 'cdn.resources.set-fastedge-handlers'
         | 'cdn.origins.create'
         | 'cdn.rules.create';
     describe: string;

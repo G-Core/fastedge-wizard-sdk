@@ -352,12 +352,15 @@ export function stub(intent, params, theme) {
             const planStores = Array.isArray(params?.newFastedgeStores) ? params.newFastedgeStores : [];
             const planOrigins = Array.isArray(params?.newCdnOrigins) ? params.newCdnOrigins : [];
             const planRules = Array.isArray(params?.newCdnRules) ? params.newCdnRules : [];
+            const fastedgeHandlers = params?.cdnResourceFastedgeHandlers ?? null;
+            const fastedgeHandlerHooks = fastedgeHandlers ? Object.keys(fastedgeHandlers) : [];
 
             const steps = [
                 ...planSecrets.map((s) => ({ action: 'fastedge.secrets.create', describe: `Create secret "${s.name ?? s.ref}"` })),
                 ...planStores.map((s) => ({ action: 'fastedge.stores.create', describe: `Create KV store "${s.name ?? s.ref}"` })),
                 ...planApps.map((a) => ({ action: 'fastedge.apps.create', describe: `Create app "${a.name ?? 'stub-app'}"` })),
                 ...(params?.cdnResourceId !== undefined ? [{ action: 'cdn.resources.pick', describe: `Use CDN resource #${params.cdnResourceId}` }] : []),
+                ...(fastedgeHandlerHooks.length ? [{ action: 'cdn.resources.set-fastedge-handlers', describe: `Attach FastEdge handlers on CDN resource #${params.cdnResourceId} (${fastedgeHandlerHooks.join(', ')})` }] : []),
                 ...planOrigins.map((o) => ({ action: 'cdn.origins.create', describe: `Create CDN origin group "${o.name}"` })),
                 ...planRules.map((r) => ({ action: 'cdn.rules.create', describe: `Create CDN rule "${r.name}"` })),
             ];
@@ -366,6 +369,7 @@ export function stub(intent, params, theme) {
             if (planSecrets.length) parts.push(`${planSecrets.length} secret(s)`);
             if (planStores.length) parts.push(`${planStores.length} store(s)`);
             parts.push(`${planApps.length} app(s)`);
+            if (fastedgeHandlerHooks.length) parts.push(`${fastedgeHandlerHooks.length} FastEdge handler(s)`);
             if (planOrigins.length) parts.push(`${planOrigins.length} CDN origin(s)`);
             if (planRules.length) parts.push(`${planRules.length} CDN rule(s)`);
 
