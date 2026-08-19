@@ -293,12 +293,14 @@ export interface DeploymentPlanFastedgeHandlerBinding {
  * on_response_body. Each hook may bind a different app — separate templates/apps per hook stage
  * are supported. At least one hook must be present.
  */
-export interface DeploymentPlanFastedgeHandlers {
+type AtLeastOne<T> = { [K in keyof T]-?: Required<Pick<T, K>> & Partial<Omit<T, K>> }[keyof T];
+
+export type DeploymentPlanFastedgeHandlers = AtLeastOne<{
     on_request_headers?: DeploymentPlanFastedgeHandlerBinding;
     on_request_body?: DeploymentPlanFastedgeHandlerBinding;
     on_response_headers?: DeploymentPlanFastedgeHandlerBinding;
     on_response_body?: DeploymentPlanFastedgeHandlerBinding;
-}
+}>;
 
 export interface DeploymentPlanParams {
     fastedgeApps: DeploymentPlanApp[];
