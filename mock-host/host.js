@@ -11,6 +11,20 @@ try {
     if (res.ok) applyFixtures(await res.json());
 } catch { /* no fixtures — defaults stand */ }
 
+// ── Brand preview (wizard-brand.json / --brand) ───────────────────────────────
+
+let brand = {};
+try {
+    const res = await fetch('/wizard-host/brand.json');
+    if (res.ok) brand = await res.json();
+} catch { /* no brand — Gcore defaults */ }
+
+// Same shape the portal sends: absent when there is no reseller brand.
+function tokens() {
+    const value = theme === 'dark' ? brand.brandDark ?? brand.brand : brand.brand;
+    return value ? { '--gc-wizard-brand': value } : undefined;
+}
+
 // ── Panel resize ──────────────────────────────────────────────────────────────
 
 const PANEL_W_KEY = 'mock-host-panel-w';
@@ -91,8 +105,8 @@ function toggleTheme() {
     theme = theme === 'light' ? 'dark' : 'light';
     applyTheme();
     if (port) {
-        port.postMessage({ v: V, type: 'event', event: 'theme.changed', payload: { theme } });
-        log('🎨', `theme.changed → ${theme}`, 'ev');
+        port.postMessage({ v: V, type: 'event', event: 'theme.changed', payload: { theme, tokens: tokens() } });
+        log('🎨', `theme.changed → ${theme}`, 'ev', tokens() ?? null);
     }
 }
 
@@ -111,7 +125,7 @@ function init() {
     wiz.contentWindow.postMessage({ v: V, type: 'init' }, '*', [ch.port2]);
     port.postMessage({
         v: V, type: 'hello',
-        hostContext: { specVersion: '1', theme, locale: navigator.language || 'en' },
+        hostContext: { specVersion: '1', theme, locale: navigator.language || 'en', tokens: tokens() },
     });
 
     setStatus('connecting…');

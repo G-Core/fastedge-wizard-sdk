@@ -68,6 +68,11 @@ export interface HelloMessage {
         specVersion: string;
         theme: 'light' | 'dark';
         locale: string;
+        /**
+         * `--gc-wizard-*` overrides for a reseller-skinned portal. Absent on the Gcore portal.
+         * `theme.changed` carries the same field; each delivery replaces the last.
+         */
+        tokens?: Record<string, string>;
     };
     // NOTE: grantedCapabilities removed (doc 11) — trust is repo-level, not per-wizard grant
 }

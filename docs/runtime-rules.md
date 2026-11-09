@@ -158,6 +158,19 @@ switches it mid-session. It also sets `<html lang>` to the portal locale. Transl
 text is up to you; read `locale` from `context.get()`.
 Style with the `--gc-wizard-*` tokens from the shared stylesheet so both themes work.
 
-**Known limitation:** white-label portals (resellers that rebrand the portal) don't yet pass
-their brand colours into the wizard iframe. Your wizard renders with the default Gcore palette on
-every portal.
+On a white-label portal (a reseller that rebrands the portal), the portal also sends the
+reseller's brand colour, and the SDK sets it as `--gc-wizard-brand` for you. Use
+`var(--gc-wizard-brand)` for accents and your wizard follows each reseller's brand. Only the brand
+colour changes: text, surface and button tokens stay the same on every portal, as they do in
+the portal's own components.
+
+To preview a brand locally, put a `wizard-brand.json` in your repo root (or any folder above the
+wizard). The mock host sends it the same way the portal does, to every wizard below it:
+
+```json
+{ "brand": "#ff7900", "brandDark": "#ff9a40" }
+```
+
+`brandDark` is optional; without it, `brand` is used in both themes. For a one-off check, pass
+`--brand '#ff7900'` (and `--brand-dark`) to the dev command instead. Quote the value: an
+unquoted `#` starts a shell comment.

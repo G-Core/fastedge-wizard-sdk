@@ -198,6 +198,9 @@ pnpm run dev   # builds and starts the mock host on http://localhost:9999
 
 Open `http://localhost:9999` and click "Run demo" to step through all intents without a live portal.
 
+Building for a rebranded portal? Add a `wizard-brand.json` to your repo root to preview its brand
+colour in every wizard; see [runtime rules §Theme](runtime-rules.md#theme-locale-and-branding).
+
 ## Error handling reference
 
 All bridge errors are `WizardError` instances with a `.code` string. The codes you most commonly need to handle in UI:
