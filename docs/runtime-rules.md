@@ -50,6 +50,7 @@ The iframe has `sandbox="allow-scripts"` and nothing else, and the proxy sends
 | -------------------------------------------------------------- | --------------------------------------- | ---------------------------------------------------------------------- |
 | `fetch`, `XMLHttpRequest`, WebSocket, `EventSource`            | `connect-src 'none'`                    | Get all data through the SDK                                           |
 | Load scripts, styles, fonts or images from another origin      | `default-src 'self'`                    | Bundle everything; reference assets relatively (`./logo.svg`)          |
+| Use `data:` or `blob:` URLs for images or fonts                | `default-src 'self'` (neither is `'self'`) | Ship the file and reference it by relative path, or use inline `<svg>` |
 | Inline `<script>`, inline `<style>`, `style="…"` attributes     | `default-src 'self'` (no `unsafe-inline`) | External `./main.js` / `./styles.css` files and CSS classes            |
 | Use `localStorage`, `sessionStorage`, IndexedDB or cookies     | Opaque origin (no `allow-same-origin`)  | Keep state in memory; persist through app `env` via the SDK if it must survive |
 | `alert`, `confirm`, `prompt`                                   | No `allow-modals`                       | Render your own in-page UI                                             |
@@ -59,6 +60,26 @@ The iframe has `sandbox="allow-scripts"` and nothing else, and the proxy sends
 
 Navigating the frame after the handshake makes the portal tear the wizard down with
 `protocol_error`. This includes `location.href = …` and full-page reloads.
+
+### Images, icons, logos and fonts
+
+Ship them with the wizard. Files in your wizard's build output are served from the same origin
+as the wizard, so they load like any other asset:
+
+- **Files**, referenced by relative path: `<img src="./assets/logo.svg">`,
+  `background-image: url(./assets/bg.png)`, or `@font-face { src: url(./fonts/brand.woff2) }`.
+- **Inline `<svg>`** in your HTML or JSX. It is part of the page, not a separate download, so
+  the CSP doesn't restrict it.
+
+Remote URLs (`https://cdn.example.com/logo.png`), `data:` URIs and `blob:` URLs are blocked.
+Check your bundler too: esbuild's `dataurl` loader, and similar asset-inlining in other bundlers,
+turns an imported image into a `data:` URI that the browser refuses to load. Use esbuild's `file`
+loader, or copy the assets into the output folder, instead.
+
+Draw icons with `fill="currentColor"` (or `stroke="currentColor"`) so they follow the
+`--gc-wizard-*` colour tokens, including dark mode.
+
+You don't need to add a product logo or header: the portal around the wizard already shows one.
 
 ## What your wizard can touch: the managed set
 
