@@ -52,6 +52,44 @@ function applyTheme(theme: 'light' | 'dark'): void {
     document.body.classList.add(`gc-theme-${theme}`);
 }
 
+// Host-sent token overrides (reseller skins). Any `--gc-wizard-*` key is accepted, so the host can
+// start skinning another token without an SDK release. Values are limited to hex / rgb() / hsl()
+// colours and plain lengths; `var()`, `url()`, `calc()`, named colours and anything else is dropped.
+// A malformed colour must be dropped, not applied: an invalid custom property overrides the
+// wizard.css default and leaves every consumer of the token invalid.
+const TOKEN_KEY = /^--gc-wizard-[a-z0-9-]+$/;
+const LENGTH = /^\d*\.?\d+(px|rem|em|%)?$/;
+const N = String.raw`[+-]?(\d+\.?\d*|\.\d+)(%|deg)?`;
+const COLOUR = new RegExp(
+    String.raw`^(#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})` +
+        String.raw`|(rgba?|hsla?)\(\s*(${N}(\s*,\s*${N}){2}(\s*,\s*${N})?|${N}(\s+${N}){2}(\s*/\s*${N})?)\s*\))$`,
+    'i',
+);
+// The regex fixes the shape (and is what the unit tests exercise); the browser's own parser
+// catches what a shape check can't (e.g. `hsl(1, 2, 3)` missing its `%`).
+const isColour = (v: string): boolean =>
+    COLOUR.test(v) && (typeof CSS === 'undefined' || CSS.supports('color', v));
+let appliedTokens: string[] = [];
+
+/**
+ * Replaces the previous override set. Set on `body`, not `:root`: wizard.css declares the dark
+ * palette on `body.gc-theme-dark`, which would beat a value inherited from `:root`. Absent or
+ * empty `tokens` restores the wizard.css defaults.
+ */
+function applyTokens(tokens: unknown): void {
+    if (typeof document === 'undefined') return;
+    const style = document.body.style;
+    for (const key of appliedTokens) style.removeProperty(key);
+    appliedTokens = [];
+    if (!isRecord(tokens)) return;
+    for (const [key, raw] of Object.entries(tokens)) {
+        const value = typeof raw === 'string' ? raw.trim() : '';
+        if (value.length > 64 || !TOKEN_KEY.test(key) || !(LENGTH.test(value) || isColour(value))) continue;
+        style.setProperty(key, value);
+        appliedTokens.push(key);
+    }
+}
+
 // Client-side intent timeout is slightly longer than the host's INTENT_TIMEOUT_MS
 // (doc 06) so the host's own timeout error always wins the race.
 const CLIENT_INTENT_TIMEOUT_MS = INTENT_TIMEOUT_MS + 30_000;
@@ -215,8 +253,9 @@ export class WizardSessionImpl implements WizardSession {
 
         // Auto-apply theme on live toggle — no wizard code needed.
         this.on('theme.changed', (p) => {
-            const payload = p as { theme: 'light' | 'dark' };
+            const payload = p as { theme: 'light' | 'dark'; tokens?: Record<string, string> };
             applyTheme(payload.theme);
+            applyTokens(payload.tokens);
         });
     }
 
@@ -372,6 +411,7 @@ export function connect(options: WizardSdkOptions): Promise<WizardSession> {
 
             const hello = data as unknown as HelloMessage;
             applyTheme(hello.hostContext.theme ?? 'light');
+            applyTokens(hello.hostContext.tokens);
             if (typeof document !== 'undefined') {
                 document.documentElement.lang = hello.hostContext.locale ?? 'en';
             }

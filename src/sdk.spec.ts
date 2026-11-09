@@ -51,9 +51,15 @@ beforeEach(() => {
     });
 
     const bodyClassList = new Set<string>();
+    const bodyStyle = new Map<string, string>();
     Object.defineProperty(globalThis, 'document', {
         value: {
             body: {
+                style: {
+                    setProperty: (k: string, v: string) => bodyStyle.set(k, v),
+                    removeProperty: (k: string) => bodyStyle.delete(k),
+                    _map: bodyStyle,
+                },
                 classList: {
                     add: (...cls: string[]) => cls.forEach((c) => bodyClassList.add(c)),
                     remove: (...cls: string[]) => cls.forEach((c) => bodyClassList.delete(c)),
@@ -372,6 +378,95 @@ describe('theme — body class from HELLO', () => {
         const classList = ((globalThis as Record<string, unknown>)['document'] as { body: { classList: { _set: Set<string> } } }).body.classList._set;
         expect(classList.has('gc-theme-dark')).toBe(true);
         expect(classList.has('gc-theme-light')).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// theme tokens — reseller overrides from HELLO / theme.changed
+// ---------------------------------------------------------------------------
+
+describe('theme tokens', () => {
+    const bodyStyle = (): Map<string, string> =>
+        ((globalThis as Record<string, unknown>)['document'] as { body: { style: { _map: Map<string, string> } } })
+            .body.style._map;
+
+    function helloWithTokens(port: FakePort, tokens: unknown): void {
+        port.onmessage?.({
+            data: {
+                v: WIZARD_PROTOCOL_VERSION,
+                type: 'hello',
+                hostContext: { specVersion: '1', theme: 'light', locale: 'en', tokens },
+            },
+        });
+    }
+
+    it('applies valid --gc-wizard-* colours and lengths from HELLO on body', async () => {
+        const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
+        const port = createFakePort();
+        sendWindowInit(port);
+        helloWithTokens(port, {
+            '--gc-wizard-brand': '#ff7900',
+            '--gc-wizard-link': 'rgb(0, 112, 192)',
+            '--gc-wizard-text': 'hsl(210 50% 40% / 0.5)',
+            '--gc-wizard-bg': '#fff8',
+            '--gc-wizard-radius': '4px',
+        });
+        await connectPromise;
+
+        expect(Object.fromEntries(bodyStyle())).toEqual({
+            '--gc-wizard-brand': '#ff7900',
+            '--gc-wizard-link': 'rgb(0, 112, 192)',
+            '--gc-wizard-text': 'hsl(210 50% 40% / 0.5)',
+            '--gc-wizard-bg': '#fff8',
+            '--gc-wizard-radius': '4px',
+        });
+    });
+
+    it('drops non --gc-wizard-* keys and unsafe values', async () => {
+        const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
+        const port = createFakePort();
+        sendWindowInit(port);
+        helloWithTokens(port, {
+            '--gc-color-primary': '#ff7900',
+            color: 'red',
+            '--gc-wizard-brand': 'url(https://evil.example/x)',
+            '--gc-wizard-link': 'var(--other)',
+            '--gc-wizard-text': 'red; background: blue',
+            '--gc-wizard-bg': 42,
+        });
+        await connectPromise;
+
+        expect(bodyStyle().size).toBe(0);
+    });
+
+    it.each(['#12345', '#1234567', 'notacolour', 'red', 'rgb(1)', 'rgb(1, 2)', 'rgb(1, 2 3)', 'rgb()', 'hsl(1 2)'])(
+        'drops malformed colour %s',
+        async (value) => {
+            const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
+            const port = createFakePort();
+            sendWindowInit(port);
+            helloWithTokens(port, { '--gc-wizard-brand': value });
+            await connectPromise;
+
+            expect(bodyStyle().size).toBe(0);
+        },
+    );
+
+    it('theme.changed replaces the previous set; no tokens restores defaults', async () => {
+        const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
+        const port = createFakePort();
+        sendWindowInit(port);
+        helloWithTokens(port, { '--gc-wizard-brand': '#ff7900', '--gc-wizard-link': '#0070c0' });
+        await connectPromise;
+
+        const changed = (payload: unknown) =>
+            port.onmessage?.({ data: { v: WIZARD_PROTOCOL_VERSION, type: 'event', event: 'theme.changed', payload } });
+
+        changed({ theme: 'dark', tokens: { '--gc-wizard-brand': '#ff9a40' } });
+        expect(Object.fromEntries(bodyStyle())).toEqual({ '--gc-wizard-brand': '#ff9a40' });
+
+        changed({ theme: 'light' });
+        expect(bodyStyle().size).toBe(0);
     });
 });
 

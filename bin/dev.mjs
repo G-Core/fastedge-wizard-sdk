@@ -7,8 +7,18 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mockHostDir = path.join(__dirname, '..', 'mock-host');
 
-const positional = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-const flags = new Set(process.argv.slice(2).filter((a) => a.startsWith('--')));
+// Flags: boolean `--x`, or valued `--x value` / `--x=value` (only for VALUED_FLAGS).
+const VALUED_FLAGS = new Set(['--brand', '--brand-dark']);
+const positional = [];
+const flags = new Set();
+const flagValues = {};
+for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (!arg.startsWith('--')) { positional.push(arg); continue; }
+    const [name, inline] = arg.split(/=(.*)/s);
+    if (VALUED_FLAGS.has(name)) flagValues[name] = inline ?? process.argv[++i];
+    else flags.add(arg);
+}
 const wizardDir = path.resolve(positional[0] ?? '.');
 const PORT = parseInt(process.env.PORT ?? '9999', 10);
 const VALIDATE_ONLY = flags.has('--validate-only');
@@ -109,6 +119,42 @@ async function loadFixtures() {
     return { fixtures, hasErrors };
 }
 
+// ── Reseller brand preview ────────────────────────────────────────────────────
+// The real portal sends a reseller's brand colour over the bridge as `--gc-wizard-brand`.
+// To preview one, set it once in `wizard-brand.json` at the repo root
+// (`{ "brand": "#ff7900", "brandDark": "#ff9a40" }`, brandDark optional); the nearest one
+// above the wizard wins. `--brand` / `--brand-dark` override it for a one-off check.
+
+function findUp(dir, name) {
+    for (let d = dir; ; d = path.dirname(d)) {
+        const f = path.join(d, name);
+        if (fs.existsSync(f)) return f;
+        if (path.dirname(d) === d) return null;
+    }
+}
+
+function loadBrand() {
+    let brand = {};
+    const file = findUp(wizardDir, 'wizard-brand.json');
+    if (file) {
+        try {
+            brand = JSON.parse(fs.readFileSync(file, 'utf8'));
+        } catch (e) {
+            console.warn(`  Warning: ${file}: invalid JSON — ${e.message}`);
+        }
+        if (!brand || typeof brand !== 'object' || Array.isArray(brand)) {
+            console.warn(`  Warning: ${file}: expected an object like { "brand": "#ff7900" } — ignored`);
+            brand = {};
+        }
+    }
+    if (flagValues['--brand']) brand.brand = flagValues['--brand'];
+    if (flagValues['--brand-dark']) brand.brandDark = flagValues['--brand-dark'];
+    const out = {};
+    if (typeof brand.brand === 'string') out.brand = brand.brand;
+    if (typeof brand.brandDark === 'string') out.brandDark = brand.brandDark;
+    return { brand: out, file };
+}
+
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 console.log(`\nFastEdge wizard dev server`);
@@ -126,6 +172,12 @@ try {
     }
 } catch {
     console.log('  ✓ wizard.css (bundled fallback — CDN unreachable)');
+}
+
+const { brand: brandPreview, file: brandFile } = loadBrand();
+if (brandPreview.brand || brandPreview.brandDark) {
+    const src = flagValues['--brand'] || flagValues['--brand-dark'] ? 'flags' : brandFile;
+    console.log(`\nBrand preview: ${brandPreview.brand ?? '(default)'} light, ${brandPreview.brandDark ?? brandPreview.brand ?? '(default)'} dark — from ${src}`);
 }
 
 let loadedFixtures = {};
@@ -171,6 +223,13 @@ const server = http.createServer((req, res) => {
     if (urlPath === '/wizard-host/fixtures.json') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(loadedFixtures));
+        return;
+    }
+
+    // Brand preview for host.js to send as `tokens`
+    if (urlPath === '/wizard-host/brand.json') {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(brandPreview));
         return;
     }
 

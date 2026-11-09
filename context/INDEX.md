@@ -31,7 +31,7 @@ Consumers install from npm:
 
 ## How `fastedge-wizard-apps` Consumes This SDK
 
-Each wizard in `G-Core/FastEdge-Wizard-apps` (and any allow-listed partner repo) has:
+Each wizard in `G-Core/FastEdge-Wizard-apps` has:
 
 ```json
 "dependencies": {
@@ -43,8 +43,6 @@ The wizard's build step (`esbuild src/main.js --bundle --format=esm --outfile=ma
 bundles the SDK into a single `main.js`. Source only is committed; CI builds each
 wizard and publishes the output, which jsDelivr serves. The proxy enforces
 `connect-src 'none'` — no runtime SDK fetch is possible, so bundling is mandatory.
-
-Partner repos follow the exact same pattern — same SDK package, same build.
 
 ---
 
