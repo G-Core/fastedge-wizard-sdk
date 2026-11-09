@@ -121,7 +121,7 @@ async function loadFixtures() {
 
 // ── Reseller brand preview ────────────────────────────────────────────────────
 // The real portal sends a reseller's brand colour over the bridge as `--gc-wizard-brand`.
-// A partner fork sets theirs once in `wizard-brand.json` at the repo root
+// To preview one, set it once in `wizard-brand.json` at the repo root
 // (`{ "brand": "#ff7900", "brandDark": "#ff9a40" }`, brandDark optional); the nearest one
 // above the wizard wins. `--brand` / `--brand-dark` override it for a one-off check.
 
