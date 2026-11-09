@@ -55,7 +55,8 @@ fastedge-wizard-sdk/
 │   └── dev.mjs                   # mock host server — serves wizard + fixtures
 ├── mock-host/                    # mock host static assets (host.js, stubs.js)
 ├── docs/
-│   └── quickstart.md
+│   ├── quickstart.md
+│   └── runtime-rules.md          # sandbox, managed-set scope, re-entry, rollback — author-facing
 ├── context/
 │   └── INDEX.md                  # read this second
 ├── .claude/

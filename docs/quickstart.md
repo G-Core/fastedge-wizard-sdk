@@ -210,4 +210,5 @@ All bridge errors are `WizardError` instances with a `.code` string. The codes y
 | `conflict`       | Duplicate app/secret name                 | Ask user to choose a different name       |
 | `rate_limited`   | > 20 intents in 10 s                      | Debounce requests and retry after a pause |
 
-For the full code list see the [README](../README.md#wizarderror).
+For the full code list see the [README](../README.md#wizarderror). For what the sandbox blocks,
+what `out_of_scope` means and how rollback behaves, see [`runtime-rules.md`](runtime-rules.md).
