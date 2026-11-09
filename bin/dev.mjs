@@ -142,6 +142,10 @@ function loadBrand() {
         } catch (e) {
             console.warn(`  Warning: ${file}: invalid JSON — ${e.message}`);
         }
+        if (!brand || typeof brand !== 'object' || Array.isArray(brand)) {
+            console.warn(`  Warning: ${file}: expected an object like { "brand": "#ff7900" } — ignored`);
+            brand = {};
+        }
     }
     if (flagValues['--brand']) brand.brand = flagValues['--brand'];
     if (flagValues['--brand-dark']) brand.brandDark = flagValues['--brand-dark'];

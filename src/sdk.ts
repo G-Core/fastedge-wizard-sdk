@@ -53,10 +53,22 @@ function applyTheme(theme: 'light' | 'dark'): void {
 }
 
 // Host-sent token overrides (reseller skins). Any `--gc-wizard-*` key is accepted, so the host can
-// start skinning another token without an SDK release. Values are limited to colours and plain
-// lengths; `var()`, `url()`, `calc()` and anything else is dropped.
+// start skinning another token without an SDK release. Values are limited to hex / rgb() / hsl()
+// colours and plain lengths; `var()`, `url()`, `calc()`, named colours and anything else is dropped.
+// A malformed colour must be dropped, not applied: an invalid custom property overrides the
+// wizard.css default and leaves every consumer of the token invalid.
 const TOKEN_KEY = /^--gc-wizard-[a-z0-9-]+$/;
-const TOKEN_VALUE = /^(#[0-9a-f]{3,8}|[a-z]+|(rgba?|hsla?)\([\d\s.,%/+-]+\)|\d*\.?\d+(px|rem|em|%)?)$/i;
+const LENGTH = /^\d*\.?\d+(px|rem|em|%)?$/;
+const N = String.raw`[+-]?(\d+\.?\d*|\.\d+)(%|deg)?`;
+const COLOUR = new RegExp(
+    String.raw`^(#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})` +
+        String.raw`|(rgba?|hsla?)\(\s*(${N}(\s*,\s*${N}){2}(\s*,\s*${N})?|${N}(\s+${N}){2}(\s*/\s*${N})?)\s*\))$`,
+    'i',
+);
+// The regex fixes the shape (and is what the unit tests exercise); the browser's own parser
+// catches what a shape check can't (e.g. `hsl(1, 2, 3)` missing its `%`).
+const isColour = (v: string): boolean =>
+    COLOUR.test(v) && (typeof CSS === 'undefined' || CSS.supports('color', v));
 let appliedTokens: string[] = [];
 
 /**
@@ -72,7 +84,7 @@ function applyTokens(tokens: unknown): void {
     if (!isRecord(tokens)) return;
     for (const [key, raw] of Object.entries(tokens)) {
         const value = typeof raw === 'string' ? raw.trim() : '';
-        if (value.length > 64 || !TOKEN_KEY.test(key) || !TOKEN_VALUE.test(value)) continue;
+        if (value.length > 64 || !TOKEN_KEY.test(key) || !(LENGTH.test(value) || isColour(value))) continue;
         style.setProperty(key, value);
         appliedTokens.push(key);
     }

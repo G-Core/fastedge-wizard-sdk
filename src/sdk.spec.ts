@@ -407,6 +407,8 @@ describe('theme tokens', () => {
         helloWithTokens(port, {
             '--gc-wizard-brand': '#ff7900',
             '--gc-wizard-link': 'rgb(0, 112, 192)',
+            '--gc-wizard-text': 'hsl(210 50% 40% / 0.5)',
+            '--gc-wizard-bg': '#fff8',
             '--gc-wizard-radius': '4px',
         });
         await connectPromise;
@@ -414,6 +416,8 @@ describe('theme tokens', () => {
         expect(Object.fromEntries(bodyStyle())).toEqual({
             '--gc-wizard-brand': '#ff7900',
             '--gc-wizard-link': 'rgb(0, 112, 192)',
+            '--gc-wizard-text': 'hsl(210 50% 40% / 0.5)',
+            '--gc-wizard-bg': '#fff8',
             '--gc-wizard-radius': '4px',
         });
     });
@@ -434,6 +438,19 @@ describe('theme tokens', () => {
 
         expect(bodyStyle().size).toBe(0);
     });
+
+    it.each(['#12345', '#1234567', 'notacolour', 'red', 'rgb(1)', 'rgb(1, 2)', 'rgb(1, 2 3)', 'rgb()', 'hsl(1 2)'])(
+        'drops malformed colour %s',
+        async (value) => {
+            const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
+            const port = createFakePort();
+            sendWindowInit(port);
+            helloWithTokens(port, { '--gc-wizard-brand': value });
+            await connectPromise;
+
+            expect(bodyStyle().size).toBe(0);
+        },
+    );
 
     it('theme.changed replaces the previous set; no tokens restores defaults', async () => {
         const connectPromise = connect({ expectedHostOrigin: HOST_ORIGIN });
