@@ -106,8 +106,9 @@ is raised. Don't name your own variables `WIZARD_*`.
 - Every write opens a portal consent dialog. Pickers (`secrets.pickOrCreate`,
   `stores.pickOrCreate`, `secrets.generateKeypair`, `cdn.resources.pick`) count as consent.
   If the user dismisses either kind, the call fails with `user_cancelled`.
-- The 60 s intent timeout starts **after** the user consents. A dialog left open doesn't use up
-  the time budget.
+- The host's 60 s execution timeout starts **after** the user consents. The SDK also enforces a
+  90 s timeout from when the call is made, including time spent waiting for consent, so leaving
+  a dialog open can still cause the call to reject with `timeout`.
 - `apps.update` and `apps.link` **shallow-merge** `env` and `secretRefs`: keys you omit are kept.
 
 ## Deployments: plan, apply and rollback
