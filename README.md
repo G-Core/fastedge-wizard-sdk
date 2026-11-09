@@ -119,6 +119,13 @@ try {
 }
 ```
 
+## Runtime rules
+
+The browser sandbox, which resources your wizard may touch (`out_of_scope`), template vs re-entry
+launches, reserved `WIZARD_*` env keys, and deployment rollback are covered in
+[`docs/runtime-rules.md`](docs/runtime-rules.md), with architecture diagrams. Read it before you
+build: each rule fails silently or confusingly if you hit it unaware.
+
 ## Rate limits & safety
 
 - Max **20 intents per 10 s** sliding window (host-enforced; `rate_limited` on breach).
