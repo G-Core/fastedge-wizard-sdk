@@ -100,7 +100,7 @@ function destKey(d: Destination): string {
 const sameValues = (vals: Array<string | undefined>): boolean => vals.every((v) => v === vals[0]);
 
 /**
- * Read one slot (env key / secret slot / store slot) across several apps. Absent everywhere → absent;
+ * Read one binding (env key / secret binding / store binding) across several apps. Absent everywhere → absent;
  * present everywhere with one value → that value; anything else → diverged.
  */
 function readAcross(
@@ -223,22 +223,22 @@ function env<T>(refs: Refs, key: string, opts: EnvOptions<T> = {}): Field<T> {
     };
 }
 
-function refSlot(
+function refBinding(
     kind: 'secret' | 'store',
     refs: Refs,
-    slot: string,
+    binding: string,
 ): Field<SecretValue> {
     const list = toRefs(refs);
-    const label = `${kind} ${slot}`;
+    const label = `${kind} ${binding}`;
     const bag = kind === 'secret' ? 'secretRefs' : 'storeRefs';
     const lookup = kind === 'secret' ? 'secrets' : 'stores';
 
     return {
         kind,
-        destinations: list.map((app) => (kind === 'secret' ? { app, secret: slot } : { app, store: slot })),
+        destinations: list.map((app) => (kind === 'secret' ? { app, secret: binding } : { app, store: binding })),
         load(state) {
             const r = readAcross(state, list, (a) => {
-                const id = a[bag]?.[slot];
+                const id = a[bag]?.[binding];
                 return id === undefined ? undefined : String(id);
             }, label);
             if (r.error) return { error: r.error };
@@ -253,24 +253,24 @@ function refSlot(
             }
             const id = value === REMOVE ? undefined : value.id;
             return writeAcross(state, list, (a) => {
-                a[bag] = setOrDelete(a[bag], slot, id);
+                a[bag] = setOrDelete(a[bag], binding, id);
             });
         },
     };
 }
 
-const secret = (refs: Refs, slot: string): Field<SecretValue> => refSlot('secret', refs, slot);
-const store = (refs: Refs, slot: string): Field<SecretValue> => refSlot('store', refs, slot);
+const secret = (refs: Refs, binding: string): Field<SecretValue> => refBinding('secret', refs, binding);
+const store = (refs: Refs, binding: string): Field<SecretValue> => refBinding('store', refs, binding);
 
-/** A generated keypair: private half in a secret slot, public JWK in an env key. Reuse it — never regenerate on Re-entry. */
-function keypair(ref: string, secretSlot: string, publicJwkKey: string): Field<KeypairValue> {
-    const label = `keypair ${secretSlot}/${publicJwkKey}`;
+/** A generated keypair: private half in a secret binding, public JWK in an env key. Reuse it — never regenerate on Re-entry. */
+function keypair(ref: string, secretBinding: string, publicJwkKey: string): Field<KeypairValue> {
+    const label = `keypair ${secretBinding}/${publicJwkKey}`;
     return {
         kind: 'keypair',
-        destinations: [{ app: ref, secret: secretSlot }, { app: ref, env: publicJwkKey }],
+        destinations: [{ app: ref, secret: secretBinding }, { app: ref, env: publicJwkKey }],
         load(state) {
             const app = findApp(state, ref);
-            const id = app.secretRefs?.[secretSlot];
+            const id = app.secretRefs?.[secretBinding];
             const publicKey = app.env?.[publicJwkKey];
             if (id === undefined && publicKey === undefined) {
                 return { error: { code: 'missing', message: `${label} is not set` } };
@@ -292,7 +292,7 @@ function keypair(ref: string, secretSlot: string, publicJwkKey: string): Field<K
                 throw new WizardError('invalid_params', `${label}: value needs an id and a publicKey`);
             }
             return writeAcross(state, [ref], (a) => {
-                a.secretRefs = setOrDelete(a.secretRefs, secretSlot, value === REMOVE ? undefined : value.id);
+                a.secretRefs = setOrDelete(a.secretRefs, secretBinding, value === REMOVE ? undefined : value.id);
                 a.env = setOrDelete(a.env, publicJwkKey, value === REMOVE ? undefined : value.publicKey);
             });
         },
