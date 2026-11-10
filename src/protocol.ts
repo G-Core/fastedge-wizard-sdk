@@ -48,6 +48,7 @@ export const INTENT_NAMES = [
     'cdn.origins.list',
     'cdn.rules.create',
     'cdn.rules.list',
+    'deployment.current',
     'deployment.plan',
     'deployment.apply',
     'wizard.finish',

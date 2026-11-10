@@ -37,6 +37,7 @@ import type {
     CdnRuleCreateResult,
     CdnRulesListParams,
     CdnRuleSummary,
+    DeploymentCurrent,
     DeploymentPlanParams,
     DeploymentPlan,
     DeploymentApplyResult,
@@ -147,6 +148,8 @@ export interface WizardSession {
     };
 
     deployment: {
+        /** Re-entry only: the live state of the wizard's managed resources, in Plan shape. */
+        current(): Promise<DeploymentCurrent>;
         plan(params: DeploymentPlanParams): Promise<DeploymentPlan>;
         apply(params: { planId: string }): Promise<DeploymentApplyResult>;
         /** Convenience: plan → onPlan? → apply (with progress events) → return result.
@@ -171,6 +174,25 @@ interface PendingIntent {
     resolve: (data: unknown) => void;
     reject: (err: WizardError) => void;
     timer: ReturnType<typeof setTimeout>;
+}
+
+/** Create-only (`new*`) and desired-state (`cdnOrigins`/`cdnRules`) styles can't mix — fail before
+ *  the bridge so the author sees it at once. The host re-checks. */
+function planGuarded(
+    params: DeploymentPlanParams,
+    send: (p: DeploymentPlanParams) => Promise<DeploymentPlan>,
+): Promise<DeploymentPlan> {
+    const createStyle = params.newCdnOrigins !== undefined || params.newCdnRules !== undefined;
+    const desiredStyle = params.cdnOrigins !== undefined || params.cdnRules !== undefined;
+    if (createStyle && desiredStyle) {
+        return Promise.reject(
+            new WizardError(
+                'invalid_params',
+                'deployment plan mixes newCdnOrigins/newCdnRules with cdnOrigins/cdnRules — use one style',
+            ),
+        );
+    }
+    return send(params);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -230,10 +252,11 @@ export class WizardSessionImpl implements WizardSession {
             },
         };
         this.deployment = {
-            plan: (params) => this.invoke<DeploymentPlan>('deployment.plan', params),
+            current: () => this.invoke<DeploymentCurrent>('deployment.current', {}),
+            plan: (params) => planGuarded(params, (p) => this.invoke<DeploymentPlan>('deployment.plan', p)),
             apply: (params) => this.invoke<DeploymentApplyResult>('deployment.apply', params),
             deploy: async (params, options) => {
-                const plan = await this.invoke<DeploymentPlan>('deployment.plan', params);
+                const plan = await planGuarded(params, (p) => this.invoke<DeploymentPlan>('deployment.plan', p));
                 options?.onPlan?.(plan);
                 const off = this.on('deployment.progress', (p) => {
                     options?.onProgress?.(p as DeploymentProgressEvent);
