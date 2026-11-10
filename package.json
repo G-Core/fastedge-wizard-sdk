@@ -22,6 +22,7 @@
         "dist",
         "bin",
         "mock-host",
+        "!mock-host/**/*.spec.mjs",
         "docs"
     ],
     "sideEffects": false,

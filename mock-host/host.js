@@ -1,4 +1,4 @@
-import { stub, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
+import { stub, reentry, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
 
 const V = 1;
 let port = null;
@@ -130,6 +130,7 @@ function init() {
 
     setStatus('connecting…');
     log('🤝', 'INIT + HELLO sent', 'dim');
+    if (reentry) log('↩️', 'Re-entry mode (?mode=reentry): launchTemplateId = null, deployment.current() serves the live state', 'ev');
 }
 
 function onPortMessage(e) {
@@ -145,6 +146,8 @@ function onPortMessage(e) {
 
 function send(id, ok, payload) {
     if (!port) return;
+    // Stubs signal an intent error by returning { __error: { code, message } }.
+    if (ok && payload?.__error) { ok = false; payload = payload.__error; log('⛔', `${payload.code}: ${payload.message}`, 'err'); }
     port.postMessage(ok
         ? { v: V, type: 'result', id, ok: true, data: payload }
         : { v: V, type: 'result', id, ok: false, error: payload });
@@ -159,7 +162,7 @@ function dispatch({ id, intent, params }) {
 
     if (intent === 'deployment.plan') {
         const result = stub(intent, params, theme);
-        lastPlan = result;
+        lastPlan = result?.__error ? null : result;
         send(id, true, result);
         log('✅', `${intent} → ok`, 'ok', result);
     } else if (PICKER_INTENTS.has(intent)) {
