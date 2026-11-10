@@ -285,7 +285,10 @@ let live = (() => {
 })();
 let pendingPlan = null; // last deployment.plan params, consumed by deployment.apply
 
-function setLive(state) {
+/** The current live deployment (for "Save as fixture"), or null. */
+export const getLive = () => live;
+
+export function setLive(state) {
     live = state;
     sessionStorage.setItem(LIVE_KEY, JSON.stringify(state));
 }

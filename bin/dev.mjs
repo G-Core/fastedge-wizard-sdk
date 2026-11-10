@@ -209,6 +209,59 @@ if (hasFixtures || VALIDATE_ONLY) {
     }
 }
 
+// ── Current state file (deployment.current fixture) ───────────────────────────
+
+const STATE_KEY = 'deployment/current';
+const stateFile = () => path.join(fixturesDir, `${STATE_KEY}.json`);
+const stateSchema = async () => (await import(path.join(__dirname, '..', 'dist', 'schemas.js'))).fixtureSchemas[STATE_KEY];
+const issuesText = (error) => error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('\n');
+
+function reply(res, status, body, type = 'text/plain') {
+    res.writeHead(status, { 'Content-Type': `${type}; charset=utf-8` });
+    res.end(body);
+}
+
+async function handleStateFile(req, res) {
+    const allowed = [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`];
+    const origin = req.headers.origin ?? (req.headers.referer ? new URL(req.headers.referer).origin : undefined);
+    if (!allowed.includes(origin)) return reply(res, 403, 'Forbidden');
+    const schema = await stateSchema();
+    const rel = path.relative(findProjectRoot(wizardDir), stateFile());
+
+    if (req.method === 'GET') {
+        let raw;
+        try { raw = JSON.parse(fs.readFileSync(stateFile(), 'utf8')); } catch (e) {
+            return reply(res, e.code === 'ENOENT' ? 404 : 400, e.code === 'ENOENT' ? `${rel} does not exist` : `${rel}: ${e.message}`);
+        }
+        const result = schema.safeParse(raw);
+        if (!result.success) return reply(res, 400, `${rel}:\n${issuesText(result.error)}`);
+        return reply(res, 200, JSON.stringify(result.data), 'application/json');
+    }
+
+    if (req.method === 'POST') {
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', (chunk) => {
+            body += chunk;
+            if (body.length > 1024 * 1024) req.destroy();
+        });
+        req.on('end', () => {
+            let data;
+            try { data = JSON.parse(body); } catch { return reply(res, 400, 'Invalid JSON'); }
+            const result = schema.safeParse(data);
+            if (!result.success) return reply(res, 400, issuesText(result.error));
+            fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
+            fs.writeFileSync(stateFile(), JSON.stringify(result.data, null, 4) + '\n');
+            loadedFixtures[STATE_KEY] = result.data;
+            console.log(`  ✓ saved ${rel}`);
+            reply(res, 200, rel);
+        });
+        return;
+    }
+
+    reply(res, 405, 'Method not allowed');
+}
+
 // ── HTTP server ───────────────────────────────────────────────────────────────
 
 const server = http.createServer((req, res) => {
@@ -223,6 +276,14 @@ const server = http.createServer((req, res) => {
     if (urlPath === '/wizard-host/fixtures.json') {
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify(loadedFixtures));
+        return;
+    }
+
+    // Current state ⇄ fixtures/deployment/current.json — the mock host's side panel Load/Save.
+    // GET re-reads the file from disk; POST validates and writes it. Same-origin only: the
+    // sandboxed wizard iframe has an opaque origin and can't reach this.
+    if (urlPath === '/wizard-host/state') {
+        handleStateFile(req, res);
         return;
     }
 

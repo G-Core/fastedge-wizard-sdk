@@ -1,4 +1,4 @@
-import { stub, reentry, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
+import { stub, reentry, getLive, setLive, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
 
 const V = 1;
 let port = null;
@@ -62,6 +62,27 @@ wiz.addEventListener('load', init);
 
 applyTheme();
 document.getElementById('tb').addEventListener('click', toggleTheme);
+document.getElementById('sf').addEventListener('click', saveState);
+document.getElementById('sl').addEventListener('click', loadState);
+
+// Current state ⇄ fixtures/deployment/current.json (via the dev server).
+async function saveState() {
+    const live = getLive();
+    if (!live) { log('⚠️', 'No current state yet — deploy once in template mode, or Load a saved one', 'err'); return; }
+    const res = await fetch('/wizard-host/state', { method: 'POST', body: JSON.stringify(live) });
+    const text = await res.text();
+    if (res.ok) log('💾', `Saved current state → ${text}`, 'ok', live);
+    else log('⛔', `Save failed (${res.status})`, 'err', text);
+}
+
+async function loadState() {
+    const res = await fetch('/wizard-host/state');
+    if (!res.ok) { log('⛔', `Load failed (${res.status})`, 'err', await res.text()); return; }
+    setLive(await res.json());
+    log('📂', 'Loaded current state — relaunching in Re-entry mode', 'ok', getLive());
+    if (reentry) wiz.src = wiz.src; // relaunch the wizard; it reads current() again
+    else location.search = '?mode=reentry';
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
