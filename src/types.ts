@@ -311,6 +311,20 @@ export interface DeploymentPlanParams {
     cdnResourceFastedgeHandlers?: DeploymentPlanFastedgeHandlers;
 }
 
+/**
+ * A wizard deployment in Plan shape — what a field map loads form values from and saves them into.
+ * On Re-entry it is the live state of the wizard's managed resources; in template mode the wizard
+ * builds it from its own app skeletons. `secrets` / `stores` are id→name lookups for display.
+ */
+export interface DeploymentState {
+    fastedgeApps: DeploymentPlanApp[];
+    cdnResourceId?: number;
+    cdnOrigins?: DeploymentPlanOrigin[];
+    cdnRules?: DeploymentPlanRule[];
+    secrets?: Array<{ id: number; name: string }>;
+    stores?: Array<{ id: number; name: string }>;
+}
+
 export interface DeploymentPlanStep {
     action:
         | 'fastedge.apps.create'
