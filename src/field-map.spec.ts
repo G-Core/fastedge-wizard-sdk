@@ -228,6 +228,17 @@ describe('field.keypair', () => {
     });
 });
 
+describe('env default', () => {
+    it('loads a copy of an object default, so editing the form value keeps omitIfDefault working', () => {
+        const map = defineFieldMap({
+            cfg: field.env('app', 'CFG', { codec: field.json<{ n: number }>(), default: { n: 1 }, omitIfDefault: true }),
+        });
+        const loaded = map.load(liveState()).values.cfg!;
+        loaded.n = 2; // the form edits the loaded value in place
+        expect(map.save({ cfg: loaded }, liveState()).fastedgeApps[1]!.env!.CFG).toBe('{"n":2}');
+    });
+});
+
 describe('field.custom', () => {
     // edge-totp's protected paths: one filter rule per path, Ref named by content.
     const PREFIX = 'filter:';
@@ -273,6 +284,18 @@ describe('field.custom', () => {
             }),
         });
         expectInvalidParams(() => ruleThief.save({ x: null }, liveState()), /CDN rules outside/);
+
+        const revisionDropper = defineFieldMap({
+            x: field.custom<null>({
+                writes: [],
+                load: () => null,
+                save: (_v, s) => { const { revision: _r, ...rest } = s as DeploymentState & { revision?: string }; return rest; },
+            }),
+        });
+        expectInvalidParams(
+            () => revisionDropper.save({ x: null }, { ...liveState(), revision: '3' } as DeploymentState),
+            /deployment metadata/,
+        );
     });
 
     it('reports a load failure as invalid', () => {

@@ -210,8 +210,10 @@ function env<T>(refs: Refs, key: string, opts: EnvOptions<T> = {}): Field<T> {
             const r = readAcross(state, list, (a) => a.env?.[key], label);
             if (r.error) return { error: r.error };
             if (r.absent) {
+                // A copy: an object/array default must not be mutated through the form value, or
+                // omitIfDefault would compare against the edited value and drop the edit.
                 return opts.default !== undefined
-                    ? { value: opts.default }
+                    ? { value: structuredClone(opts.default) }
                     : { error: { code: 'missing', message: `${label} is not set` } };
             }
             try {
@@ -408,6 +410,14 @@ function assertOnlyWrote(before: DeploymentState, after: DeploymentState, writes
 
     if (JSON.stringify(before.cdnOrigins ?? []) !== JSON.stringify(after.cdnOrigins ?? [])) fail('CDN origins');
     if (before.cdnResourceId !== after.cdnResourceId) fail('the CDN resource');
+
+    // Everything else (revision, secret/store names, …) is metadata no field may write: losing the
+    // revision would break the next Re-entry plan and turn off fixed-field enforcement.
+    const covered = new Set(['fastedgeApps', 'cdnRules', 'cdnOrigins', 'cdnResourceId']);
+    const rest = (s: DeploymentState): string => JSON.stringify(
+        Object.entries(s).filter(([k]) => !covered.has(k)).sort(([x], [y]) => (x < y ? -1 : 1)),
+    );
+    if (rest(before) !== rest(after)) fail('deployment metadata (revision, secret/store names)');
 }
 
 // ---------------------------------------------------------------------------
