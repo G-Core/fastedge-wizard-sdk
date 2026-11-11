@@ -130,7 +130,7 @@ build: each rule fails silently or confusingly if you hit it unaware.
 
 - Max **20 intents per 10 s** sliding window (host-enforced; `rate_limited` on breach).
 - Max **8 in-flight intents** at a time.
-- Messages larger than **64 KB** are silently dropped by the host (the client-side timeout fires after ~90 s).
+- The host caps each wizard → host message at **64 KB**, or **1 MB** for `deployment.plan`, `fastedge.apps.create` and `fastedge.apps.update` (they carry app env). A larger message is rejected straight away with `invalid_params`.
 - The bridge rejects `INIT` from any origin other than `expectedHostOrigin`.
 
 ## Examples
