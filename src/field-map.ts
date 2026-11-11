@@ -106,6 +106,38 @@ function clone(state: DeploymentState): DeploymentState {
     return structuredClone(state);
 }
 
+/** JSON with object keys sorted at every level (undefined properties dropped): equal data → equal string. */
+function canonical(v: unknown): string {
+    return JSON.stringify(v, (_k, x: unknown) =>
+        x && typeof x === 'object' && !Array.isArray(x)
+            ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1)))
+            : x);
+}
+
+/**
+ * Structural equality for a fixed field's loaded value, whatever its codec returns: Object.is for
+ * primitives (NaN, -0, bigint), Set/Map by content, Date by time, arrays by position, other objects by
+ * prototype + string form + own keys (a key set to undefined counts as absent).
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+    if (a instanceof Date) return Object.is(a.getTime(), (b as Date).getTime());
+    if (a instanceof Set) return a.size === (b as Set<unknown>).size && [...a].every((x) => [...(b as Set<unknown>)].some((y) => sameValue(x, y)));
+    if (a instanceof Map) {
+        const m = b as Map<unknown, unknown>;
+        return a.size === m.size && [...a].every(([k, v]) => m.has(k) && sameValue(v, m.get(k)));
+    }
+    if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((x, i) => sameValue(x, (b as unknown[])[i]));
+    // A class instance (URL, RegExp, …) may keep its content in internal slots: its string form must match too.
+    const proto = Object.getPrototypeOf(a);
+    if (proto !== Object.prototype && proto !== null && String(a) !== String(b)) return false;
+    const keys = (o: object) => Object.keys(o).filter((k) => (o as Record<string, unknown>)[k] !== undefined);
+    const ka = keys(a), kb = keys(b);
+    return ka.length === kb.length && ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
 function destKey(d: Destination): string {
     if ('env' in d) return `env:${d.app}:${d.env}`;
     if ('secret' in d) return `secret:${d.app}:${d.secret}`;
@@ -227,11 +259,11 @@ function env<T>(refs: Refs, key: string, opts: EnvOptions<T> = {}): Field<T> {
             if (value !== REMOVE) {
                 try {
                     encoded = codec.encode(value);
+                    if (opts.omitIfDefault && opts.default !== undefined && encoded === codec.encode(opts.default)) {
+                        encoded = undefined;
+                    }
                 } catch (e) {
                     throw new WizardError('invalid_params', `${label}: ${(e as Error).message}`);
-                }
-                if (opts.omitIfDefault && opts.default !== undefined && encoded === codec.encode(opts.default)) {
-                    encoded = undefined;
                 }
             }
             return writeAcross(state, list, (a) => {
@@ -414,9 +446,8 @@ function assertOnlyWrote(before: DeploymentState, after: DeploymentState, writes
     // Everything else (revision, secret/store names, …) is metadata no field may write: losing the
     // revision would break the next Re-entry plan and turn off fixed-field enforcement.
     const covered = new Set(['fastedgeApps', 'cdnRules', 'cdnOrigins', 'cdnResourceId']);
-    const rest = (s: DeploymentState): string => JSON.stringify(
-        Object.entries(s).filter(([k]) => !covered.has(k)).sort(([x], [y]) => (x < y ? -1 : 1)),
-    );
+    const rest = (s: DeploymentState): string =>
+        canonical(Object.fromEntries(Object.entries(s).filter(([k]) => !covered.has(k))));
     if (rest(before) !== rest(after)) fail('deployment metadata (revision, secret/store names)');
 }
 
@@ -446,17 +477,12 @@ export function defineFieldMap<F extends Record<string, Field<unknown>>>(fields:
     // Re-entry state comes from deployment.current(), which always carries a revision; a template-mode
     // skeleton never does. Fixed fields are only enforced against a live deployment.
     const isLive = (state: DeploymentState): boolean => typeof (state as { revision?: unknown }).revision === 'string';
-    const loaded = (f: Field<unknown>, state: DeploymentState): { ok: true; json: string } | { ok: false } => {
-        const r = f.load(state);
-        return r.error ? { ok: false } : { ok: true, json: JSON.stringify(r.value) };
-    };
-
     return {
         locks(current) {
             if (!current) return {};
             const out: Record<string, string> = {};
             for (const [name, f] of Object.entries(fields)) {
-                if (f.fixed && loaded(f, current).ok) out[name] = f.fixed;
+                if (f.fixed && !f.load(current).error) out[name] = f.fixed;
             }
             return out as Partial<Record<keyof F, string>>;
         },
@@ -471,17 +497,24 @@ export function defineFieldMap<F extends Record<string, Field<unknown>>>(fields:
             return { values: values as Partial<FieldValues<F>>, errors: errors as Partial<Record<keyof F, FieldError>> };
         },
         save(values, state) {
+            // Snapshot every fixed field that loaded (an unloadable one may be repaired), then check them
+            // all after every field has saved, so no field — its own or another — can change one.
+            const fixed = isLive(state)
+                ? Object.entries(fields).flatMap(([name, f]) => {
+                    const r = f.fixed ? f.load(state) : null;
+                    return r && !r.error ? [{ name, f, before: r.value }] : [];
+                })
+                : [];
             let next = state;
             for (const [name, f] of Object.entries(fields)) {
                 const v = (values as Record<string, unknown>)[name];
                 if (v === undefined) continue; // untouched
-                const before = f.fixed && isLive(state) ? loaded(f, next) : { ok: false as const };
                 next = f.save(v, next);
-                if (before.ok) {
-                    const after = loaded(f, next);
-                    if (!after.ok || after.json !== before.json) {
-                        throw new WizardError('invalid_params', `field "${name}" is fixed once deployed: ${f.fixed}`);
-                    }
+            }
+            for (const { name, f, before } of fixed) {
+                const after = f.load(next);
+                if (after.error || !sameValue(after.value, before)) {
+                    throw new WizardError('invalid_params', `field "${name}" is fixed once deployed: ${f.fixed}`);
                 }
             }
             return next === state ? clone(state) : next;

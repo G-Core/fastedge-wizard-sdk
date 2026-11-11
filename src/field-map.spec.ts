@@ -393,7 +393,77 @@ describe('field.fixed', () => {
         expect(app(next, 'app').env?.MFA_SESSION_COOKIE).toBe('custom_session');
     });
 
+    it('writing back a loaded default is not a change', () => {
+        expect(app(map.save({ cookie: 'mfa_session' }, live()), 'app').env?.MFA_SESSION_COOKIE).toBe('mfa_session');
+    });
+
+    it('catches a change to a value JSON cannot represent (custom codec returning a Set)', () => {
+        const setCodec = { decode: (s: string) => new Set(s.split(',')), encode: (v: Set<string>) => [...v].join(',') };
+        const m = defineFieldMap({ paths: field.fixed('Fixed.', field.env('app', 'AUTH_PREFIX', { codec: setCodec })) });
+        expect(m.locks(live())).toEqual({ paths: 'Fixed.' });
+        expectInvalidParams(() => m.save({ paths: new Set(['/other']) }, live()), /"paths" is fixed/);
+        expect(app(m.save({ paths: new Set(['/auth']) }, live()), 'app').env?.AUTH_PREFIX).toBe('/auth');
+    });
+
+    it('another field cannot change what a fixed custom field loads', () => {
+        const m = defineFieldMap({
+            combo: field.fixed('Fixed.', field.custom<string>({
+                writes: [{ app: 'app', env: 'AUTH_PREFIX' }],
+                load: (s) => `${app(s, 'app').env?.AUTH_PREFIX}|${app(s, 'app').env?.PROOF_TTL}`,
+                save: (_v, s) => s,
+            })),
+            ttl: field.env('app', 'PROOF_TTL'),
+        });
+        expectInvalidParams(() => m.save({ ttl: '60' }, live()), /"combo" is fixed/);
+    });
+
+    it('compares loaded values structurally: NaN vs Infinity, Sets read from another field, undefined keys', () => {
+        const num = defineFieldMap({ ttl: field.fixed('Fixed.', field.env('app', 'PROOF_TTL', { codec: { decode: Number, encode: String } })) });
+        const nan = live(); app(nan, 'app').env!.PROOF_TTL = 'NaN';
+        expectInvalidParams(() => num.save({ ttl: Infinity }, nan), /"ttl" is fixed/);
+
+        const viaOther = defineFieldMap({
+            x: field.fixed('Fixed.', field.custom<Set<string>>({
+                writes: [{ app: 'app', env: 'AUTH_PREFIX' }],
+                load: (s) => new Set([app(s, 'app').env!.PROOF_TTL!]),
+                save: (_v, s) => s,
+            })),
+            ttl: field.env('app', 'PROOF_TTL'),
+        });
+        expectInvalidParams(() => viaOther.save({ ttl: '60' }, live()), /"x" is fixed/);
+
+        const opt = defineFieldMap({
+            cfg: field.fixed('Fixed.', field.env('app', 'CFG', { codec: field.json<{ a?: number }>(), default: { a: undefined } })),
+        });
+        expect(() => opt.save(opt.load(live()).values, live())).not.toThrow();
+
+        const url = defineFieldMap({ login: field.fixed('Fixed.', field.env('filter', 'MFA_LOGIN_URL', { codec: { decode: (s) => new URL(s), encode: (u: URL) => u.href } })) });
+        expectInvalidParams(() => url.save({ login: new URL('https://other.example/') }, live()), /"login" is fixed/);
+        expect(() => url.save({ login: new URL('https://login.example') }, live())).not.toThrow();
+    });
+
     it('needs a reason', () => {
         expectInvalidParams(() => field.fixed('', field.env('app', 'X')), /needs a reason/);
+    });
+});
+
+describe('save error handling', () => {
+    it('an invalid default with omitIfDefault fails as invalid_params, naming the key', () => {
+        const positive = field.json<{ n: number }>({ validate: (v) => { if (v.n <= 0) throw new Error('n must be positive'); } });
+        const m = defineFieldMap({ cfg: field.env('app', 'CFG', { codec: positive, default: { n: 0 }, omitIfDefault: true }) });
+        expectInvalidParams(() => m.save({ cfg: { n: 2 } }, liveState()), /env CFG: n must be positive/);
+    });
+
+    it('custom metadata check ignores nested key order and explicit undefined', () => {
+        const { stores: _stores, ...noStores } = liveState(); // stores absent → an explicit undefined is the same
+        const base = { ...noStores, revision: 'r1', secrets: [{ id: 1, name: 'key' }] } as DeploymentState;
+        const m = defineFieldMap({
+            x: field.custom<null>({
+                writes: [],
+                load: () => null,
+                save: (_v, s) => ({ ...s, secrets: [{ name: 'key', id: 1 }], stores: undefined }),
+            }),
+        });
+        expect(() => m.save({ x: null }, base)).not.toThrow();
     });
 });
