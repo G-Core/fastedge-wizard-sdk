@@ -58,3 +58,45 @@ it('mock host supports Re-entry with a stateful live deployment', async () => {
     m = await run('?mode=reentry&reset');
     assert.equal(m.stub('deployment.current', {}).__error.code, 'conflict');
 });
+
+it('mock host Re-entry plans: applies the approved plan, keeps names, the anchor, sharedEnv and the CDN resource', async () => {
+    const store = new Map();
+    vi.stubGlobal('sessionStorage', {
+        getItem: (k) => store.get(k) ?? null,
+        setItem: (k, v) => store.set(k, v),
+        removeItem: (k) => store.delete(k),
+    });
+    vi.stubGlobal('navigator', { language: 'en' });
+    vi.stubGlobal('location', { search: '?mode=reentry' });
+    const app = (ref, env = {}) => ({ ref, name: ref, api_type: 'wasi-http', source: { fromTemplateId: 1 }, env, secretRefs: { K: 9001 } });
+    store.set('mock-host-live-deployment', JSON.stringify({
+        revision: '1', cdnResourceId: 5, fastedgeApps: [app('anchor'), app('other')],
+        secrets: [{ id: 9001, name: 'saved-name' }], stores: [],
+    }));
+    vi.resetModules();
+    const m = await import('./stubs.js');
+    const live = () => m.stub('deployment.current', {});
+
+    // A different CDN resource is refused, not silently ignored.
+    assert.equal(m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, cdnResourceId: 6, revision: '1' }).__error.code, 'invalid_params');
+
+    // sharedEnv alone is a change, and apply stores it.
+    const shared = m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, sharedEnv: { S: '1' }, revision: '1' });
+    assert.equal(shared.steps.length, 2);
+
+    // A later or rejected plan doesn't change what the earlier (approved) plan applies.
+    m.stub('deployment.plan', { fastedgeApps: [], revision: '1' }); // rejected: apps missing
+    const other = m.stub('deployment.plan', { fastedgeApps: [app('other', { X: '1' }), app('anchor')], revision: '1' });
+    m.stub('deployment.apply', { planId: shared.planId });
+    assert.deepEqual(live().fastedgeApps.map((a) => a.env), [{ S: '1' }, { S: '1' }]);
+    assert.equal(m.stub('deployment.apply', { planId: shared.planId }).__error.code, 'not_found'); // applies once
+
+    // Saved names survive an apply for ids the picker fixtures don't know.
+    assert.deepEqual(live().secrets, [{ id: 9001, name: 'saved-name' }]);
+
+    // Reordering the apps doesn't move the anchor.
+    const reordered = structuredClone(live().fastedgeApps).reverse();
+    m.stub('deployment.apply', { planId: m.stub('deployment.plan', { fastedgeApps: reordered, revision: '2' }).planId });
+    assert.equal(live().fastedgeApps[0].ref, 'anchor');
+    assert.ok(other.planId); // the stale plan was never applied
+});

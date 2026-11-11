@@ -176,14 +176,14 @@ function send(id, ok, payload) {
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-let lastPlan = null; // cached from deployment.plan so apply modal can show it
+const shownPlans = new Map(); // planId → deployment.plan result, so the apply modal shows the plan it applies
 
 function dispatch({ id, intent, params }) {
     log('📨', intent, 'dim', Object.keys(params ?? {}).length ? params : null);
 
     if (intent === 'deployment.plan') {
         const result = stub(intent, params, theme);
-        lastPlan = result?.__error ? null : result;
+        if (!result?.__error) shownPlans.set(result.planId, result);
         send(id, true, result);
         log('✅', `${intent} → ok`, 'ok', result);
     } else if (PICKER_INTENTS.has(intent)) {
@@ -319,7 +319,8 @@ function showConsentModal(id, intent, params) {
 
         const body = document.getElementById('modal-body');
         body.onclick = null;
-        if (intent === 'deployment.apply' && lastPlan) {
+        const lastPlan = intent === 'deployment.apply' ? shownPlans.get(params?.planId) : null;
+        if (lastPlan) {
             const steps = lastPlan.steps.map(s => `<li>${esc(s.describe)}</li>`).join('');
             const warnings = (lastPlan.warnings ?? []).map(w => `<p class="warn">⚠ ${esc(w)}</p>`).join('');
             body.innerHTML = `<p><strong>${esc(lastPlan.summary)}</strong></p><ol>${steps}</ol>${warnings}`;
@@ -337,7 +338,7 @@ function showConsentModal(id, intent, params) {
             document.getElementById('modal-ok').disabled = true;
             document.getElementById('modal-no').disabled = true;
             if (intent === 'deployment.apply') {
-                await runApply(id, body, foot);
+                await runApply(id, body, foot, params);
             } else {
                 const result = stub(intent, params, theme);
                 closeModal();
@@ -360,7 +361,7 @@ function deny(id, intent) {
     log('🚫', `${intent} → user_cancelled`, 'err');
 }
 
-async function runApply(id, body, foot) {
+async function runApply(id, body, foot, params) {
     const steps = ['Creating app resources', 'Setting environment', 'Finalising deployment'];
     const progress = document.createElement('div');
     progress.className = 'apply-progress';
@@ -381,7 +382,7 @@ async function runApply(id, body, foot) {
         log('📡', `deployment.progress [${i + 1}/${steps.length}] ${steps[i]}`, 'ev');
     }
 
-    const result = stub('deployment.apply', {}, theme);
+    const result = stub('deployment.apply', params, theme);
     closeModal();
     send(id, true, result);
     log('✅', 'deployment.apply → complete', 'ok', result);
