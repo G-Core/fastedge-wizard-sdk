@@ -136,6 +136,16 @@ textarea {
   resize: vertical;
 }
 
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: transparent;
+  border-style: dashed;
+  color: var(--gc-wizard-text-muted);
+  cursor: not-allowed;
+  opacity: 1;
+}
+
 button {
   cursor: pointer;
   background: var(--gc-wizard-btn-bg);
