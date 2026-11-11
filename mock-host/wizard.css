@@ -5,9 +5,9 @@
                       'Droid Sans', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
   --gc-wizard-text: #161616;
   --gc-wizard-text-muted: #868685;
-  --gc-wizard-bg: #ffffff;
+  --gc-wizard-bg: #fff;
   --gc-wizard-surface: #e5e3e7;
-  --gc-wizard-surface-input: #ffffff;
+  --gc-wizard-surface-input: #fff;
   --gc-wizard-surface-code: #f5f4f4;
   --gc-wizard-border: #d2cfd5;
   --gc-wizard-border-subtle: #ddd8e2;
@@ -20,7 +20,7 @@
   --gc-wizard-info: #328ef8;
   --gc-wizard-link: #328ef8;
   --gc-wizard-btn-bg: #161616;
-  --gc-wizard-btn-text: #ffffff;
+  --gc-wizard-btn-text: #fff;
   --gc-wizard-btn-disabled-bg: #f5f4f4;
   --gc-wizard-btn-disabled-text: #aea9b4;
 }
