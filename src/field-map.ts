@@ -114,9 +114,21 @@ function canonical(v: unknown): string {
             : x);
 }
 
+/** Same items in any order, each item of `b` matched at most once (Set elements, Map entries). */
+function sameEntries(a: unknown[], b: unknown[]): boolean {
+    if (a.length !== b.length) return false;
+    const left = [...b];
+    return a.every((x) => {
+        const i = left.findIndex((y) => sameValue(x, y));
+        if (i < 0) return false;
+        left.splice(i, 1);
+        return true;
+    });
+}
+
 /**
  * Structural equality for a fixed field's loaded value, whatever its codec returns: Object.is for
- * primitives (NaN, -0, bigint), Set/Map by content, Date by time, arrays by position, other objects by
+ * primitives (NaN, -0, bigint), Set/Map by content (keys too, each matched once), Date by time, arrays by position, other objects by
  * prototype + string form + own keys (a key set to undefined counts as absent).
  */
 function sameValue(a: unknown, b: unknown): boolean {
@@ -124,11 +136,8 @@ function sameValue(a: unknown, b: unknown): boolean {
     if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
     if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
     if (a instanceof Date) return Object.is(a.getTime(), (b as Date).getTime());
-    if (a instanceof Set) return a.size === (b as Set<unknown>).size && [...a].every((x) => [...(b as Set<unknown>)].some((y) => sameValue(x, y)));
-    if (a instanceof Map) {
-        const m = b as Map<unknown, unknown>;
-        return a.size === m.size && [...a].every(([k, v]) => m.has(k) && sameValue(v, m.get(k)));
-    }
+    if (a instanceof Set) return sameEntries([...a], [...(b as Set<unknown>)]);
+    if (a instanceof Map) return sameEntries([...a], [...(b as Map<unknown, unknown>)]); // [key, value] pairs
     if (Array.isArray(a)) return a.length === (b as unknown[]).length && a.every((x, i) => sameValue(x, (b as unknown[])[i]));
     // A class instance (URL, RegExp, …) may keep its content in internal slots: its string form must match too.
     const proto = Object.getPrototypeOf(a);

@@ -437,6 +437,25 @@ describe('field.fixed', () => {
         });
         expect(() => opt.save(opt.load(live()).values, live())).not.toThrow();
 
+        // Set/Map compared by content, each entry matched once; Map keys structurally.
+        const pairs = (s: string) => s.split(';').map((p) => p.split('=') as [string, string]);
+        const mapCodec = {
+            decode: (s: string) => new Map(pairs(s).map(([k, v]) => [{ k }, v])),
+            encode: (m: Map<{ k: string }, string>) => [...m].map(([key, v]) => `${key.k}=${v}`).join(';'),
+        };
+        const objMap = defineFieldMap({ m: field.fixed('Fixed.', field.env('app', 'M', { codec: mapCodec })) });
+        const withM = live(); app(withM, 'app').env!.M = 'a=1;b=2';
+        expect(() => objMap.save({}, withM)).not.toThrow();
+        expectInvalidParams(() => objMap.save({ m: new Map([[{ k: 'a' }, '1'], [{ k: 'a' }, '1']]) }, withM), /"m" is fixed/);
+
+        const setCodec = {
+            decode: (s: string) => new Set(s.split(';').map((n) => ({ n }))),
+            encode: (v: Set<{ n: string }>) => [...v].map((x) => x.n).join(';'),
+        };
+        const objSet = defineFieldMap({ s: field.fixed('Fixed.', field.env('app', 'S', { codec: setCodec })) });
+        const withS = live(); app(withS, 'app').env!.S = '1;2';
+        expectInvalidParams(() => objSet.save({ s: new Set([{ n: '1' }, { n: '1' }]) }, withS), /"s" is fixed/);
+
         const url = defineFieldMap({ login: field.fixed('Fixed.', field.env('filter', 'MFA_LOGIN_URL', { codec: { decode: (s) => new URL(s), encode: (u: URL) => u.href } })) });
         expectInvalidParams(() => url.save({ login: new URL('https://other.example/') }, live()), /"login" is fixed/);
         expect(() => url.save({ login: new URL('https://login.example') }, live())).not.toThrow();
