@@ -552,6 +552,10 @@ export function stub(intent, params, theme) {
             const plan = plans.get(id);
             if (!plan) return fail('not_found', `plan "${id}" not found or already applied`);
             plans.delete(id);
+            // Like the real host: a plan made at an older revision (another plan applied since) is stale.
+            if (reentry && plan.revision !== live?.revision) {
+                return fail('conflict', `stale plan — made at revision "${plan.revision}", the deployment is now "${live?.revision}"; reload current()`);
+            }
             if (reentry) return reentryApply(plan);
             recordTemplateDeploy(plan);
             return {

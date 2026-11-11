@@ -99,4 +99,12 @@ it('mock host Re-entry plans: applies the approved plan, keeps names, the anchor
     m.stub('deployment.apply', { planId: m.stub('deployment.plan', { fastedgeApps: reordered, revision: '2' }).planId });
     assert.equal(live().fastedgeApps[0].ref, 'anchor');
     assert.ok(other.planId); // the stale plan was never applied
+
+    // Two plans at the same revision: once one applies, the other is stale.
+    const rev = live().revision;
+    const p1 = m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, sharedEnv: { A: '1' }, revision: rev });
+    const p2 = m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, sharedEnv: { B: '1' }, revision: rev });
+    assert.equal(m.stub('deployment.apply', { planId: p1.planId }).status, 'complete');
+    assert.equal(m.stub('deployment.apply', { planId: p2.planId }).__error.code, 'conflict');
+    assert.equal(live().fastedgeApps[0].env.A, '1');
 });
