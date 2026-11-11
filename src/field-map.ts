@@ -6,6 +6,11 @@
  *
  * Pure functions: no bridge, no session. `save` never mutates its input and leaves every key it
  * doesn't map untouched, so hand-made dashboard edits survive a Re-entry round trip.
+ *
+ * Fields that can't change once deployed are wrapped in `field.fixed(reason, …)`:
+ *
+ *   const locks = map.locks(current);   // Re-entry: { fieldName: reason } — lock those inputs
+ *   map.save(values, current);          // throws if a fixed field's deployed value would change
  */
 import { WizardError } from './errors.js';
 import type { DeploymentPlanApp, DeploymentPlanRule, DeploymentState } from './types.js';
@@ -52,6 +57,8 @@ export type Destination =
 
 export interface Field<T> {
     readonly kind: string;
+    /** Set by `field.fixed`: why this field can't change once deployed. */
+    readonly fixed?: string;
     /** @internal */
     readonly destinations: Destination[];
     /** @internal */
@@ -70,7 +77,16 @@ export type FieldSaveValues<F extends Record<string, Field<unknown>>> = {
 
 export interface FieldMap<F extends Record<string, Field<unknown>>> {
     load(state: DeploymentState): { values: Partial<FieldValues<F>>; errors: Partial<Record<keyof F, FieldError>> };
+    /**
+     * In Re-entry, a fixed field whose deployed value would change throws `invalid_params`.
+     * (A fixed field whose deployed value could not be loaded may still be written — that's a repair.)
+     */
     save(values: FieldSaveValues<F>, state: DeploymentState): DeploymentState;
+    /**
+     * The fields the wizard must lock, with the reason to show: every `field.fixed` field whose
+     * deployed value loaded. `{}` in template mode (pass `null`, i.e. no `deployment.current()`).
+     */
+    locks(current: DeploymentState | null): Partial<Record<keyof F, string>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,7 +357,16 @@ function custom<T>(spec: {
     };
 }
 
-export const field = { env, secret, store, keypair, custom, json, REMOVE };
+/**
+ * Mark a field as fixed once deployed (Re-entry): `locks()` reports it with `reason`, and `save`
+ * refuses to change its deployed value. Wraps any field kind.
+ */
+function fixed<T>(reason: string, f: Field<T>): Field<T> {
+    if (!reason) throw new WizardError('invalid_params', 'field.fixed needs a reason to show the user');
+    return { ...f, fixed: reason };
+}
+
+export const field = { env, secret, store, keypair, custom, json, fixed, REMOVE };
 
 // ---------------------------------------------------------------------------
 // custom write enforcement
@@ -408,7 +433,23 @@ export function defineFieldMap<F extends Record<string, Field<unknown>>>(fields:
         }
     }
 
+    // Re-entry state comes from deployment.current(), which always carries a revision; a template-mode
+    // skeleton never does. Fixed fields are only enforced against a live deployment.
+    const isLive = (state: DeploymentState): boolean => typeof (state as { revision?: unknown }).revision === 'string';
+    const loaded = (f: Field<unknown>, state: DeploymentState): { ok: true; json: string } | { ok: false } => {
+        const r = f.load(state);
+        return r.error ? { ok: false } : { ok: true, json: JSON.stringify(r.value) };
+    };
+
     return {
+        locks(current) {
+            if (!current) return {};
+            const out: Record<string, string> = {};
+            for (const [name, f] of Object.entries(fields)) {
+                if (f.fixed && loaded(f, current).ok) out[name] = f.fixed;
+            }
+            return out as Partial<Record<keyof F, string>>;
+        },
         load(state) {
             const values: Record<string, unknown> = {};
             const errors: Record<string, FieldError> = {};
@@ -424,7 +465,14 @@ export function defineFieldMap<F extends Record<string, Field<unknown>>>(fields:
             for (const [name, f] of Object.entries(fields)) {
                 const v = (values as Record<string, unknown>)[name];
                 if (v === undefined) continue; // untouched
+                const before = f.fixed && isLive(state) ? loaded(f, next) : { ok: false as const };
                 next = f.save(v, next);
+                if (before.ok) {
+                    const after = loaded(f, next);
+                    if (!after.ok || after.json !== before.json) {
+                        throw new WizardError('invalid_params', `field "${name}" is fixed once deployed: ${f.fixed}`);
+                    }
+                }
             }
             return next === state ? clone(state) : next;
         },

@@ -332,3 +332,45 @@ describe('defineFieldMap', () => {
         });
     });
 });
+
+describe('field.fixed', () => {
+    const live = (): DeploymentState => ({ ...liveState(), revision: 'r1' } as DeploymentState);
+    const map = defineFieldMap({
+        store: field.fixed('Seeds live here.', field.store('app', 'TOTP_USER_SEEDS')),
+        sessionKey: field.fixed('Changing it signs everyone out.', field.secret(['filter', 'app'], 'MFA_SESSION_KEY')),
+        loginUrl: field.env('filter', 'MFA_LOGIN_URL'),
+        cookie: field.fixed('Visitors hold this cookie.', field.env(['filter', 'app'], 'MFA_SESSION_COOKIE', { default: 'mfa_session' })),
+    });
+
+    it('locks() lists fixed fields with their reasons in Re-entry, and nothing in template mode', () => {
+        expect(map.locks(live())).toEqual({
+            store: 'Seeds live here.',
+            sessionKey: 'Changing it signs everyone out.',
+            cookie: 'Visitors hold this cookie.',
+        });
+        expect(map.locks(null)).toEqual({});
+    });
+
+    it('save refuses to change a fixed field on a live deployment; unchanged values and other fields pass', () => {
+        expectInvalidParams(() => map.save({ store: { id: 8, name: 'other' } }, live()), /"store" is fixed once deployed: Seeds live here\./);
+        expectInvalidParams(() => map.save({ sessionKey: REMOVE }, live()), /"sessionKey" is fixed/);
+        const next = map.save({ store: { id: 7, name: 'acme-seeds' }, loginUrl: 'https://new.example' }, live());
+        expect(app(next, 'filter').env?.MFA_LOGIN_URL).toBe('https://new.example');
+    });
+
+    it('a fixed field that could not be loaded is not locked and may be written (a repair)', () => {
+        const broken = live();
+        delete app(broken, 'app').storeRefs;
+        expect(map.locks(broken)).not.toHaveProperty('store');
+        expect(app(map.save({ store: { id: 8, name: 'new' } }, broken), 'app').storeRefs).toEqual({ TOTP_USER_SEEDS: 8 });
+    });
+
+    it('template mode (no revision) is never enforced, even for a field with a default', () => {
+        const next = map.save({ cookie: 'custom_session', store: { id: 8, name: 'x' } }, liveState());
+        expect(app(next, 'app').env?.MFA_SESSION_COOKIE).toBe('custom_session');
+    });
+
+    it('needs a reason', () => {
+        expectInvalidParams(() => field.fixed('', field.env('app', 'X')), /needs a reason/);
+    });
+});
