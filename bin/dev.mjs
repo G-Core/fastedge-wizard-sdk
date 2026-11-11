@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mockHostDir = path.join(__dirname, '..', 'mock-host');
 
 // Flags: boolean `--x`, or valued `--x value` / `--x=value` (only for VALUED_FLAGS).
-const VALUED_FLAGS = new Set(['--brand', '--brand-dark']);
+const VALUED_FLAGS = new Set(['--brand', '--brand-dark', '--wizard-css']);
 const positional = [];
 const flags = new Set();
 const flagValues = {};
@@ -160,9 +160,12 @@ function loadBrand() {
 console.log(`\nFastEdge wizard dev server`);
 console.log(`  Wizard: ${wizardDir}`);
 
-// Fetch portal styles from CDN
+// Fetch portal styles from CDN — or use a local build (--wizard-css <path>) to try a wizard.css change before it deploys
 console.log('\nFetching portal styles...');
-try {
+if (flagValues['--wizard-css']) {
+    wizardCSS = fs.readFileSync(path.resolve(flagValues['--wizard-css']), 'utf8');
+    console.log(`  ✓ wizard.css (local: ${flagValues['--wizard-css']})`);
+} else try {
     const res = await fetch(`${CDN_BASE}/styles/v1/wizard.css`);
     if (res.ok) {
         wizardCSS = await res.text();

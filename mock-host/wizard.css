@@ -61,7 +61,7 @@ body.gc-theme-dark {
 body {
   font: 14px/1.5 var(--gc-wizard-font);
   padding: 1.5rem;
-  max-width: 900px;
+  max-width: var(--gc-wizard-max-width, 900px);
   margin: 0 auto;
   color: var(--gc-wizard-text);
   background: var(--gc-wizard-bg);
