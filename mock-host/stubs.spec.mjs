@@ -80,6 +80,11 @@ it('mock host Re-entry plans: applies the approved plan, keeps names, the anchor
     // A different CDN resource is refused, not silently ignored.
     assert.equal(m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, cdnResourceId: 6, revision: '1' }).__error.code, 'invalid_params');
 
+    // Create-only fields are refused on Re-entry, as the real host does.
+    for (const extra of [{ newCdnRules: [] }, { newCdnOrigins: [] }, { cdnResourceFastedgeHandlers: { on_request_headers: { appRef: 'anchor' } } }]) {
+        assert.equal(m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, revision: '1', ...extra }).__error.code, 'invalid_params');
+    }
+
     // sharedEnv alone is a change, and apply stores it.
     const shared = m.stub('deployment.plan', { fastedgeApps: live().fastedgeApps, sharedEnv: { S: '1' }, revision: '1' });
     assert.equal(shared.steps.length, 2);

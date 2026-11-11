@@ -329,6 +329,11 @@ function reentryPlan(params) {
     if (params?.revision !== live.revision) {
         return fail('conflict', `stale revision "${params?.revision}" — the deployment changed (now "${live.revision}"); reload current()`);
     }
+    // Like the real host: the create-only fields are refused on Re-entry, not silently dropped.
+    const createOnly = ['newCdnOrigins', 'newCdnRules', 'cdnResourceFastedgeHandlers'].filter((k) => params[k] !== undefined);
+    if (createOnly.length) {
+        return fail('invalid_params', `${createOnly.join(' / ')} are create-only — on Re-entry send cdnOrigins / cdnRules (the full desired state)`);
+    }
     if (params.cdnResourceId !== undefined && live.cdnResourceId !== undefined && params.cdnResourceId !== live.cdnResourceId) {
         return fail('invalid_params', `the CDN resource cannot change on Re-entry (deployed: ${live.cdnResourceId})`);
     }
