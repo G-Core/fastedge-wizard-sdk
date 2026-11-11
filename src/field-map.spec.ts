@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { defineFieldMap, field, REMOVE } from './field-map';
+import { defineFieldMap, field, fieldError, REMOVE } from './field-map';
 import { WizardError } from './errors';
 import type { DeploymentPlanRule, DeploymentState } from './types';
 
@@ -280,6 +280,13 @@ describe('field.custom', () => {
             x: field.custom<string>({ writes: [], load: () => { throw new Error('unrecognised rule pattern'); }, save: (_v, s) => s }),
         });
         expect(map.load(liveState()).errors.x).toEqual({ code: 'invalid', message: 'unrecognised rule pattern' });
+    });
+
+    it('reports the code a load throws with fieldError', () => {
+        const map = defineFieldMap({
+            x: field.custom<string>({ writes: [], load: () => { throw fieldError('diverged', 'KV_STORE_ID and TOTP_USER_SEEDS disagree'); }, save: (_v, s) => s }),
+        });
+        expect(map.load(liveState()).errors.x).toEqual({ code: 'diverged', message: 'KV_STORE_ID and TOTP_USER_SEEDS disagree' });
     });
 });
 

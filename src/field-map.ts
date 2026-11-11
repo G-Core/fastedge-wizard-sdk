@@ -299,6 +299,19 @@ function keypair(ref: string, secretBinding: string, publicJwkKey: string): Fiel
     };
 }
 
+const FIELD_CODES: ReadonlyArray<FieldError['code']> = ['missing', 'invalid', 'diverged'];
+
+/** A custom `load` reports `invalid` by default; throw `fieldError('missing' | 'diverged', …)` to say otherwise. */
+function fieldCodeOf(e: unknown): FieldError['code'] {
+    const code = (e as { fieldCode?: unknown } | null)?.fieldCode;
+    return FIELD_CODES.find((c) => c === code) ?? 'invalid';
+}
+
+/** Throw from a `custom` field's `load` to report a specific error code. */
+export function fieldError(code: FieldError['code'], message: string): Error {
+    return Object.assign(new Error(message), { fieldCode: code });
+}
+
 /**
  * Escape hatch for a value derived from several keys or from CDN rules. `writes` must list every
  * destination `save` may change — anything else it changes throws, so a custom field can't clobber
@@ -316,7 +329,7 @@ function custom<T>(spec: {
             try {
                 return { value: spec.load(state) };
             } catch (e) {
-                return { error: { code: 'invalid', message: (e as Error).message } };
+                return { error: { code: fieldCodeOf(e), message: (e as Error).message } };
             }
         },
         save(value, state) {
