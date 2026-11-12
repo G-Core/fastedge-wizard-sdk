@@ -177,7 +177,8 @@ await session.deployment.deploy({ ...next, revision: current.revision });
 
 - `save` changes only what the map owns and never mutates its input, so keys and objects you don't
   map survive the round trip. In template mode, save into a skeleton of the apps you want to create.
-- A value of `undefined` leaves a field untouched; `field.REMOVE` deletes what it maps to.
+- A value of `undefined` leaves a field untouched; `field.REMOVE` deletes what a built-in field maps
+  to. A `custom` field rejects `REMOVE`: give it a value its own `save` handles as removal.
 - One field can live on several apps (`['filter', 'app']`): it loads only if every copy agrees, and
   saves to all of them.
 - `errors` holds what couldn't be loaded, with `code` `missing`, `invalid` or `diverged` and the raw
