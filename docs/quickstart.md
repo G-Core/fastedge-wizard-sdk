@@ -4,12 +4,19 @@
 
 A wizard is a web app (HTML/JS, React, Vue — any framework) that the Gcore FastEdge portal loads in a sandboxed iframe. The portal acts as a broker: your wizard asks for Gcore API actions via the SDK, the portal shows a consent dialog to the user, and only then performs the action. Your wizard code **never sees a Gcore API token**.
 
-The portal sources wizards from an allow-listed GitHub repository. Your wizard is deployed as a FastEdge WASM app on your own account; the portal frames it at `wizards/app/:feAppId` (re-entry) or `wizards/template/:templateId` (first run).
+A wizard is a static site, not a FastEdge app. Its built files live in an allow-listed GitHub
+repository, and the portal serves them through a Gcore proxy (see
+[runtime rules](runtime-rules.md#how-a-wizard-is-served-and-connected)). A wizard is attached to a
+FastEdge **template**: the template's `WIZARD_SOURCE_CONFIG` says where the wizard lives. The
+template can be an HTTP app (`wasi-http`) or a CDN app (`proxy-wasm`), and the wizard can deploy
+several apps and CDN objects from it. The portal opens the wizard at `wizards/template/:templateId`
+(first run) or, if the template opts in to re-entry, at `wizards/app/:appId` on an app it deployed.
 
 ## Prerequisites
 
 - Node.js 22+
-- Your wizard app published as a FastEdge WASM HTTP app on your Gcore account
+- A FastEdge template (HTTP or CDN app) for the wizard to launch from, with its `WIZARD_SOURCE_CONFIG`
+  pointing at your wizard's folder in the wizard repository
 - The portal's origin (e.g. `https://portal.gcore.com`) — needed for `expectedHostOrigin`
 
 ## 1. Install the SDK
@@ -142,7 +149,46 @@ if (result.status === 'complete') {
 }
 ```
 
-## 6. Secrets
+## 6. Re-entry: reopen and edit a deployment
+
+If the wizard's template opts in (`"reentry": true` in its wizard config), users can reopen the
+wizard from an app it deployed and change it. Then `launchTemplateId` is `null`, and the wizard
+works in three steps: **load** the form from the live deployment, let the user **edit**, **save** it
+back. A field map does the load and the save:
+
+```js
+import { defineFieldMap, field } from '@gcoredev/fastedge-wizard-sdk';
+
+// Where each form value lives, declared once. 'main' is the Ref the app was created with.
+const fields = defineFieldMap({
+    greeting: field.env('main', 'GREETING', { default: 'hello' }),
+});
+
+const ctx = await session.context.get();
+const reentry = ctx.launchTemplateId === null;
+
+// Template mode starts from a skeleton of what to create; re-entry from what is deployed.
+const state = reentry
+    ? await session.deployment.current()
+    : { fastedgeApps: [{ ref: 'main', name: 'greeter', api_type: 'wasi-http', source: { fromTemplateId: ctx.launchTemplateId }, env: {} }] };
+
+const { values, errors } = fields.load(state);   // errors: what couldn't be read, e.g. a broken value
+// ...show the form with values; the user edits them...
+const next = fields.save(values, state);          // only the mapped keys change
+
+const result = await session.deployment.deploy(next); // re-entry: next carries current()'s revision
+if (result.status === 'complete') {
+    // done
+}
+```
+
+On re-entry the plan is the complete desired state: the portal compares it with what is deployed,
+shows the differences in its consent dialog, and applies only those. Env keys the user added by hand
+are kept, because `save` changes only what the map owns. See
+[runtime rules §Template mode and re-entry](runtime-rules.md#template-mode-and-re-entry) for
+removals, locked fields, the revision check and the field kinds.
+
+## 7. Secrets
 
 Secrets never cross the bridge as plaintext. The SDK only ever passes `{ id, name }` refs.
 
@@ -168,7 +214,7 @@ tedious — seed realistic names up front in `fixtures/fastedge/new-secrets.json
 `fixtures/fastedge/new-stores.json` (an ordered list of `{ "name": "...", "comment"?: "..." }`);
 the mock hands out the next one on each create, with no prompts.
 
-## 7. Clean up
+## 8. Clean up
 
 ```js
 // In a React component:
@@ -198,6 +244,10 @@ pnpm run dev   # builds and starts the mock host on http://localhost:9999
 
 Open `http://localhost:9999` and click "Run demo" to step through all intents without a live portal.
 
+To try re-entry locally, add `fixtures/deployment/current.json` (what `deployment.current()`
+returns) and open the mock host with `?mode=reentry`. A template-mode deploy in the mock host also
+becomes the live state, so you can deploy first and then reopen.
+
 Building for a rebranded portal? Add a `wizard-brand.json` to your repo root to preview its brand
 colour in every wizard; see [runtime rules §Theme](runtime-rules.md#theme-locale-and-branding).
 
@@ -211,6 +261,7 @@ All bridge errors are `WizardError` instances with a `.code` string. The codes y
 | `timeout`        | Intent took > 60 s (or handshake > 10 s)  | Show retry option                         |
 | `not_found`      | Resource was deleted since last read      | Refresh list and re-prompt                |
 | `conflict`       | Duplicate app/secret name                 | Ask user to choose a different name       |
+| `conflict`       | Re-entry: the deployment changed since `current()` | Ask user to close and reopen the wizard |
 | `rate_limited`   | > 20 intents in 10 s                      | Debounce requests and retry after a pause |
 
 For the full code list see the [README](../README.md#wizarderror). For what the sandbox blocks,

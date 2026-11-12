@@ -101,6 +101,10 @@ account's resources, but listing one does not make it yours.
 The list intents are not all scoped the same way. `fastedge.apps.list` returns only managed apps.
 `cdn.resources.list`, `cdn.origins.list` and `fastedge.templates.list` return account-wide data.
 
+On re-entry, `fastedge.apps.create`, `cdn.origins.create`, `cdn.rules.create` and `cdn.resources.pick`
+are refused with `denied`. Add new objects to the deployment plan instead (see below); the CDN
+resource can't change once deployed.
+
 ## Template mode and re-entry
 
 A wizard is launched in one of two ways. Check `context.get()` to tell them apart:
@@ -111,9 +115,80 @@ A wizard is launched in one of two ways. Check `context.get()` to tell them apar
 | From an app the wizard deployed (re-entry)   | `null`             | the wizard's anchor app | everything recorded by earlier runs   |
 
 The **first app your wizard creates becomes its anchor**. The portal records every resource the
-wizard owns in that app's environment, so a later re-entry starts with the same managed set and
-can `apps.get` / `apps.update` what it deployed before. Before the first app exists, the managed
-set lives only in memory: if the user closes the page, it is lost.
+wizard owns in that app's environment, so a later re-entry starts with the same managed set. Before
+the first app exists, the managed set lives only in memory: if the user closes the page, it is lost.
+
+### Opting in
+
+Re-entry is off unless the template opts in: its wizard config (`WIZARD_SOURCE_CONFIG`) needs
+`"reentry": true`. Without it, a deployed app shows no wizard button, and opening the wizard's route
+for it is refused. Only opt in once the wizard handles re-entry as described below.
+
+### How re-entry works
+
+The live deployment is the source of truth. The portal stores no saved form answers, so an edit
+made by hand in the dashboard shows up the next time the wizard opens.
+
+1. **Read.** `deployment.current()` returns the wizard's managed resources in plan shape: the same
+   `fastedgeApps`, `cdnOrigins` and `cdnRules` your plan sends, each object under the **Ref** your
+   wizard gave it at creation, plus `secrets` / `stores` (id → name, for display) and a `revision`.
+   Calling it in template mode fails with `denied`.
+2. **Edit.** Load your form from that state. A field map (below) does this for you.
+3. **Save.** Send the complete desired state back with `deployment.deploy()` (or `plan` + `apply`),
+   passing the `revision` you read. The portal works out the difference, shows it in the consent
+   dialog as a per-field review, and applies only what changed.
+
+What the desired state means:
+
+- **Apps** are matched by Ref. Every managed app must be in `fastedgeApps`; leaving one out is a
+  `conflict`. To delete one, list its Ref in `remove.fastedgeApps` (the anchor can't be removed).
+- **`cdnOrigins` / `cdnRules`** are the complete sets. A Ref you leave out is deleted, a new Ref is
+  created, and a changed one is updated. Omit a field entirely to leave that collection untouched.
+  `newCdnOrigins` / `newCdnRules` are for template mode only and can't be mixed with these.
+- **Env keys** you don't map pass through: send the app's `env` as you read it, with your changes.
+  Reserved keys (below) are always kept by the portal.
+- **Revision.** If the deployment's resources changed since you read it (another tab, another
+  user), the plan is refused with `conflict`. Ask the user to close and reopen the wizard. Edits to
+  env values, bindings or rule settings don't change the revision: the last save wins.
+- Removing something the user's own hand-made rules still use (an origin group, or an app bound as a
+  rule's filter) is refused with `conflict` at plan time.
+
+### Field mapping: load, edit, save
+
+`defineFieldMap` declares once where each form field lives in the deployment, then runs it both
+ways. It is plain functions: no bridge calls.
+
+```js
+import { defineFieldMap, field } from '@gcoredev/fastedge-wizard-sdk';
+
+const fields = defineFieldMap({
+    config: field.env('main', 'ROUTER_CONFIG', { codec: field.json({ parse: upgrade, validate }) }),
+    loginUrl: field.env(['filter', 'app'], 'LOGIN_URL', { default: '', omitIfDefault: true }),
+    apiKey: field.secret('app', 'API_KEY'),
+    seeds: field.fixed('Enrolled users\' seeds live here.', field.store('app', 'SEEDS')),
+});
+
+const current = await session.deployment.current();
+const { values, errors } = fields.load(current);   // live state → form values
+// ...the user edits values...
+const next = fields.save(values, current);          // form values → a copy of the state
+await session.deployment.deploy({ ...next, revision: current.revision });
+```
+
+- `save` changes only what the map owns and never mutates its input, so keys and objects you don't
+  map survive the round trip. In template mode, save into a skeleton of the apps you want to create.
+- A value of `undefined` leaves a field untouched; `field.REMOVE` deletes what it maps to.
+- One field can live on several apps (`['filter', 'app']`): it loads only if every copy agrees, and
+  saves to all of them.
+- `errors` holds what couldn't be loaded, with `code` `missing`, `invalid` or `diverged` and the raw
+  value. Show it and let the user reset or replace the value. Keep the deployed value unless the
+  user changes it: leave the field out of the values you save.
+- Field kinds: `env` (with an optional `codec`, `default`, `omitIfDefault`), `json` (a codec whose
+  `parse` can upgrade an old `schemaVersion`), `secret`, `store`, `keypair` (private half in a secret,
+  public JWK in env: reuse it, never regenerate on re-entry), and `custom` for a value spread over
+  several keys or CDN rules. A `custom` field must list every destination it `writes`; changing
+  anything else throws. Throw `fieldError('missing' | 'diverged', …)` from its `load` to report a
+  specific code.
 
 ### Locked fields in re-entry
 
@@ -139,10 +214,11 @@ const locks = fields.locks(current);   // re-entry: { store: 'Enrolled users…'
 
 ## Reserved environment keys
 
-Env keys starting with `WIZARD_` belong to the portal (it uses them for the anchor record above).
-They are **silently removed** from any `env` or `sharedEnv` you send through `apps.create`,
-`apps.update`, `apps.link` or `deployment.plan`. The rest of the patch still applies, and no error
-is raised. Don't name your own variables `WIZARD_*`.
+`WIZARD_SOURCE_CONFIG`, `WIZARD_ANCHOR` and `WIZARD_DATA_STORE` belong to the portal (the wizard's
+config and the anchor record above). They are **silently removed** from any `env` or `sharedEnv` you
+send through `apps.create`, `apps.update`, `apps.link` or `deployment.plan`, and kept as they are on
+every write. The rest of the patch still applies, and no error is raised. Don't name your own
+variables `WIZARD_*`: the portal may reserve more of them.
 
 ## Consent and timing
 
@@ -169,6 +245,12 @@ Prefer `session.deployment.deploy()`, which plans, applies and streams progress 
   reference their ids. After a rollback, picked or created secrets and stores are kept; run the
   picker again to reattach them. Keypair secrets are the exception: they are deleted with the apps,
   because their public half lived in an app that no longer exists.
+- On re-entry, a failed apply restores the apps and rules it updated, and deletes what it created.
+  Deletions the user consented to are not undone.
+- Treat only `status: 'complete'` as finished. After `'rolled_back'` nothing was left behind, so
+  the user can retry. After `'partial'`, don't offer a retry: in template mode it would create
+  duplicates, and on re-entry the revision has changed. Ask the user to close the wizard and reopen
+  it from the app to see what is deployed.
 - `cdnResourceFastedgeHandlers` merges into the resource's existing handlers. If a hook you
   request is already attached to an app your wizard doesn't own, apply fails with `conflict`
   rather than taking it over.
