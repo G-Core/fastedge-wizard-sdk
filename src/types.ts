@@ -306,20 +306,63 @@ export interface DeploymentPlanParams {
     fastedgeApps: DeploymentPlanApp[];
     sharedEnv?: Record<string, string>;
     cdnResourceId?: number;
+    /** Create-only (template mode). Cannot be combined with `cdnOrigins` / `cdnRules`. */
     newCdnOrigins?: DeploymentPlanOrigin[];
+    /** Create-only (template mode). Cannot be combined with `cdnOrigins` / `cdnRules`. */
     newCdnRules?: DeploymentPlanRule[];
     cdnResourceFastedgeHandlers?: DeploymentPlanFastedgeHandlers;
+    /**
+     * Desired state (Re-entry): the complete set of the wizard's origins, by Ref. A managed Ref left
+     * out is removed. Omit the field entirely to leave origins untouched.
+     */
+    cdnOrigins?: DeploymentPlanOrigin[];
+    /** Desired state (Re-entry): the complete set of the wizard's rules, by Ref. Same rules as `cdnOrigins`. */
+    cdnRules?: DeploymentPlanRule[];
+    /** Apps to delete, by Ref. Apps are never removed by omission — a managed app missing from
+     *  `fastedgeApps` is a `conflict`. The anchor app cannot be removed. */
+    remove?: { fastedgeApps?: string[] };
+    /** Re-entry: the `revision` from `deployment.current()`. The host rejects the plan with
+     *  `conflict` if the deployment's resources changed since. */
+    revision?: string;
+}
+
+/**
+ * A wizard deployment in Plan shape — what a field map loads form values from and saves them into.
+ * On Re-entry it is the live state of the wizard's managed resources; in template mode the wizard
+ * builds it from its own app skeletons. `secrets` / `stores` are id→name lookups for display.
+ */
+export interface DeploymentState {
+    fastedgeApps: DeploymentPlanApp[];
+    cdnResourceId?: number;
+    cdnOrigins?: DeploymentPlanOrigin[];
+    cdnRules?: DeploymentPlanRule[];
+    secrets?: Array<{ id: number; name: string }>;
+    stores?: Array<{ id: number; name: string }>;
+}
+
+/** `deployment.current()` result: the live state of the wizard's managed resources (Re-entry only). */
+export interface DeploymentCurrent extends DeploymentState {
+    secrets: Array<{ id: number; name: string }>;
+    stores: Array<{ id: number; name: string }>;
+    /** Opaque. Pass back as `DeploymentPlanParams.revision`. */
+    revision: string;
 }
 
 export interface DeploymentPlanStep {
     action:
         | 'fastedge.apps.create'
+        | 'fastedge.apps.update'
+        | 'fastedge.apps.delete'
         | 'fastedge.apps.set-env'
         | 'fastedge.apps.link'
         | 'cdn.resources.pick'
         | 'cdn.resources.set-fastedge-handlers'
         | 'cdn.origins.create'
-        | 'cdn.rules.create';
+        | 'cdn.origins.update'
+        | 'cdn.origins.delete'
+        | 'cdn.rules.create'
+        | 'cdn.rules.update'
+        | 'cdn.rules.delete';
     describe: string;
 }
 

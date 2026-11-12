@@ -8,6 +8,7 @@ import type {
     CdnResourceSummary,
     CdnOriginSummary,
     CdnRuleSummary,
+    DeploymentCurrent,
 } from './types.js';
 
 // ── Sub-types ─────────────────────────────────────────────────────────────────
@@ -83,6 +84,49 @@ export const CdnRuleSummarySchema: z.ZodType<CdnRuleSummary> = z.object({
     fastedgeFilter: CdnFastedgeFilterSchema.optional(),
 });
 
+// deployment.current() fixture — the live state the mock host serves in Re-entry mode.
+const RefNameSchema = z.object({ id: z.number().int(), name: z.string() });
+
+export const DeploymentCurrentSchema: z.ZodType<DeploymentCurrent> = z.object({
+    revision: z.string(),
+    fastedgeApps: z.array(
+        z.object({
+            ref: z.string().min(1),
+            name: z.string(),
+            api_type: z.enum(['wasi-http', 'proxy-wasm']),
+            source: z.union([
+                z.object({ fromTemplateId: z.number().int() }),
+                z.object({ binaryId: z.number().int() }),
+            ]),
+            env: z.record(z.string()).optional(),
+            secretRefs: z.record(z.number().int()).optional(),
+            storeRefs: z.record(z.number().int()).optional(),
+        }),
+    ),
+    cdnResourceId: z.number().int().optional(),
+    cdnOrigins: z.array(z.object({ ref: z.string().min(1), name: z.string(), appRef: z.string() })).optional(),
+    cdnRules: z
+        .array(
+            z.object({
+                ref: z.string().min(1),
+                name: z.string(),
+                rule: z.string(),
+                weight: z.number().optional(),
+                originGroupRef: z.string().optional(),
+                fastedgeFilter: z
+                    .object({
+                        appRef: z.string(),
+                        hook: z.enum(['on_request_headers', 'on_response_headers']),
+                        interruptOnError: z.boolean().optional(),
+                    })
+                    .optional(),
+            }),
+        )
+        .optional(),
+    secrets: z.array(RefNameSchema),
+    stores: z.array(RefNameSchema),
+});
+
 // Optional seed queue for the mock host's inline "Create new" in {secrets,stores}.pickOrCreate.
 // Each entry is handed out (in order) as a created resource, so a scripted flow that creates
 // several resources gets stable, meaningful names without per-create prompts.
@@ -104,6 +148,7 @@ export const fixtureSchemas = {
     'cdn/resources': z.array(CdnResourceSummarySchema),
     'cdn/origins': z.array(CdnOriginSummarySchema),
     'cdn/rules': z.array(CdnRuleSummarySchema),
+    'deployment/current': DeploymentCurrentSchema,
 } as const;
 
 export type FixtureName = keyof typeof fixtureSchemas;

@@ -5,7 +5,14 @@
  */
 
 export const WIZARD_PROTOCOL_VERSION = 1;
-export const MAX_MESSAGE_BYTES = 64 * 1024; // reject larger inbound messages
+export const MAX_MESSAGE_BYTES = 64 * 1024; // default cap on a guest → host message (host rejects with invalid_params)
+/** Intents that carry app config (env values) may be larger — e.g. a config-builder wizard's JSON. */
+export const MAX_CONFIG_MESSAGE_BYTES = 1024 * 1024;
+export const CONFIG_MESSAGE_INTENTS: ReadonlyArray<string> = [
+    'deployment.plan',
+    'fastedge.apps.create',
+    'fastedge.apps.update',
+];
 export const HANDSHAKE_TIMEOUT_MS = 10_000; // INIT→READY must complete within this
 export const INTENT_TIMEOUT_MS = 60_000; // host-side per-intent budget
 export const MAX_INFLIGHT_INTENTS = 8; // per wizard instance
@@ -48,6 +55,7 @@ export const INTENT_NAMES = [
     'cdn.origins.list',
     'cdn.rules.create',
     'cdn.rules.list',
+    'deployment.current',
     'deployment.plan',
     'deployment.apply',
     'wizard.finish',

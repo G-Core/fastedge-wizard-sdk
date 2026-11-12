@@ -115,6 +115,28 @@ wizard owns in that app's environment, so a later re-entry starts with the same 
 can `apps.get` / `apps.update` what it deployed before. Before the first app exists, the managed
 set lives only in memory: if the user closes the page, it is lost.
 
+### Locked fields in re-entry
+
+Some choices can't change once deployed. The host itself refuses a new app **name** or **source**
+(template/binary) and a different **CDN resource**. Your wizard may add its own, such as a KV store
+that holds user data or a signing key that would sign everyone out. Declare those in the field map:
+
+```js
+const fields = defineFieldMap({
+    store: field.fixed('Enrolled users\' seeds live here.', field.store('app', 'SEEDS')),
+    loginUrl: field.env('filter', 'LOGIN_URL'),
+});
+
+const locks = fields.locks(current);   // re-entry: { store: 'Enrolled users…' }; template mode (null): {}
+```
+
+- `locks()` lists every fixed field whose deployed value loaded, with its reason. Lock those inputs
+  and show the reason (the step kit's `locked` resource row and `<gc-locked>` field wrapper do both).
+- `save()` throws `invalid_params` if a fixed field's deployed value would change, so a wizard bug
+  can't quietly change it.
+- A fixed field whose deployed value **couldn't be loaded** isn't locked and may be written: that is
+  how the user repairs it.
+
 ## Reserved environment keys
 
 Env keys starting with `WIZARD_` belong to the portal (it uses them for the anchor record above).

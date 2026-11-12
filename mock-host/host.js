@@ -1,4 +1,4 @@
-import { stub, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
+import { stub, reentry, getLive, setLive, WRITE_INTENTS, PICKER_INTENTS, getPickerOptions, applyFixtures, getCreateInfo, createPicked } from './stubs.js';
 
 const V = 1;
 let port = null;
@@ -62,6 +62,27 @@ wiz.addEventListener('load', init);
 
 applyTheme();
 document.getElementById('tb').addEventListener('click', toggleTheme);
+document.getElementById('sf').addEventListener('click', saveState);
+document.getElementById('sl').addEventListener('click', loadState);
+
+// Current state ⇄ fixtures/deployment/current.json (via the dev server).
+async function saveState() {
+    const live = getLive();
+    if (!live) { log('⚠️', 'No current state yet — deploy once in template mode, or Load a saved one', 'err'); return; }
+    const res = await fetch('/wizard-host/state', { method: 'POST', body: JSON.stringify(live) });
+    const text = await res.text();
+    if (res.ok) log('💾', `Saved current state → ${text}`, 'ok', live);
+    else log('⛔', `Save failed (${res.status})`, 'err', text);
+}
+
+async function loadState() {
+    const res = await fetch('/wizard-host/state');
+    if (!res.ok) { log('⛔', `Load failed (${res.status})`, 'err', await res.text()); return; }
+    setLive(await res.json());
+    log('📂', 'Loaded current state — relaunching in Re-entry mode', 'ok', getLive());
+    if (reentry) wiz.src = wiz.src; // relaunch the wizard; it reads current() again
+    else location.search = '?mode=reentry';
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,6 +151,7 @@ function init() {
 
     setStatus('connecting…');
     log('🤝', 'INIT + HELLO sent', 'dim');
+    if (reentry) log('↩️', 'Re-entry mode (?mode=reentry): launchTemplateId = null, deployment.current() serves the live state', 'ev');
 }
 
 function onPortMessage(e) {
@@ -145,6 +167,8 @@ function onPortMessage(e) {
 
 function send(id, ok, payload) {
     if (!port) return;
+    // Stubs signal an intent error by returning { __error: { code, message } }.
+    if (ok && payload?.__error) { ok = false; payload = payload.__error; log('⛔', `${payload.code}: ${payload.message}`, 'err'); }
     port.postMessage(ok
         ? { v: V, type: 'result', id, ok: true, data: payload }
         : { v: V, type: 'result', id, ok: false, error: payload });
@@ -152,14 +176,14 @@ function send(id, ok, payload) {
 
 // ── Dispatch ──────────────────────────────────────────────────────────────────
 
-let lastPlan = null; // cached from deployment.plan so apply modal can show it
+const shownPlans = new Map(); // planId → deployment.plan result, so the apply modal shows the plan it applies
 
 function dispatch({ id, intent, params }) {
     log('📨', intent, 'dim', Object.keys(params ?? {}).length ? params : null);
 
     if (intent === 'deployment.plan') {
         const result = stub(intent, params, theme);
-        lastPlan = result;
+        if (!result?.__error) shownPlans.set(result.planId, result);
         send(id, true, result);
         log('✅', `${intent} → ok`, 'ok', result);
     } else if (PICKER_INTENTS.has(intent)) {
@@ -295,7 +319,8 @@ function showConsentModal(id, intent, params) {
 
         const body = document.getElementById('modal-body');
         body.onclick = null;
-        if (intent === 'deployment.apply' && lastPlan) {
+        const lastPlan = intent === 'deployment.apply' ? shownPlans.get(params?.planId) : null;
+        if (lastPlan) {
             const steps = lastPlan.steps.map(s => `<li>${esc(s.describe)}</li>`).join('');
             const warnings = (lastPlan.warnings ?? []).map(w => `<p class="warn">⚠ ${esc(w)}</p>`).join('');
             body.innerHTML = `<p><strong>${esc(lastPlan.summary)}</strong></p><ol>${steps}</ol>${warnings}`;
@@ -313,7 +338,7 @@ function showConsentModal(id, intent, params) {
             document.getElementById('modal-ok').disabled = true;
             document.getElementById('modal-no').disabled = true;
             if (intent === 'deployment.apply') {
-                await runApply(id, body, foot);
+                await runApply(id, body, foot, params);
             } else {
                 const result = stub(intent, params, theme);
                 closeModal();
@@ -336,7 +361,7 @@ function deny(id, intent) {
     log('🚫', `${intent} → user_cancelled`, 'err');
 }
 
-async function runApply(id, body, foot) {
+async function runApply(id, body, foot, params) {
     const steps = ['Creating app resources', 'Setting environment', 'Finalising deployment'];
     const progress = document.createElement('div');
     progress.className = 'apply-progress';
@@ -357,7 +382,7 @@ async function runApply(id, body, foot) {
         log('📡', `deployment.progress [${i + 1}/${steps.length}] ${steps[i]}`, 'ev');
     }
 
-    const result = stub('deployment.apply', {}, theme);
+    const result = stub('deployment.apply', params, theme);
     closeModal();
     send(id, true, result);
     log('✅', 'deployment.apply → complete', 'ok', result);

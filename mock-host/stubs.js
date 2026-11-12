@@ -266,6 +266,151 @@ export function applyFixtures(fixtures) {
     if (fixtures['cdn/resources']?.length) cdnResources = fixtures['cdn/resources'];
     if (fixtures['cdn/origins']?.length) cdnOrigins = fixtures['cdn/origins'];
     if (fixtures['cdn/rules']?.length) cdnRules = fixtures['cdn/rules'];
+    if (fixtures['deployment/current'] && !live) setLive(fixtures['deployment/current']);
+}
+
+// ── Re-entry: live deployment state ───────────────────────────────────────────
+// Open the mock host with ?mode=reentry to launch the wizard as if from a deployed app.
+// The live state comes from fixtures/deployment/current.json, or from the last successful
+// deployment.apply in this tab (kept in sessionStorage so a reload shows the change).
+// ?reset clears it.
+
+const LIVE_KEY = 'mock-host-live-deployment';
+const query = new URLSearchParams(location.search);
+export const reentry = query.get('mode') === 'reentry';
+if (query.has('reset')) sessionStorage.removeItem(LIVE_KEY);
+
+let live = (() => {
+    try { return JSON.parse(sessionStorage.getItem(LIVE_KEY) ?? 'null'); } catch { return null; }
+})();
+// Validated plan params by planId. deployment.apply consumes one (a plan applies once), so a rejected
+// or later plan can't change what an open consent dialog applies.
+const plans = new Map();
+let planSeq = 0;
+let latestPlanId = null;
+
+function rememberPlan(params, result) {
+    if (result?.__error) return result;
+    const planId = `mock-plan-${++planSeq}`;
+    plans.set(planId, structuredClone(params ?? {}));
+    latestPlanId = planId;
+    return { ...result, planId };
+}
+
+/** Each app's effective env: sharedEnv first, the app's own env overrides it. */
+const effectiveApps = (p) => (p.fastedgeApps ?? []).map((a) =>
+    p.sharedEnv ? { ...a, env: { ...p.sharedEnv, ...(a.env ?? {}) } } : a);
+
+/** The current live deployment (for "Save as fixture"), or null. */
+export const getLive = () => live;
+
+export function setLive(state) {
+    live = state;
+    sessionStorage.setItem(LIVE_KEY, JSON.stringify(state));
+}
+
+const fail = (code, message) => ({ __error: { code, message } });
+
+// Names for every referenced secret/store: picker fixtures first, then the names the state already had.
+function lookupNames(state, prev = state) {
+    const ids = (bag) => new Set(state.fastedgeApps.flatMap((a) => Object.values(a[bag] ?? {})));
+    const secretIds = ids('secretRefs');
+    const storeIds = ids('storeRefs');
+    const known = (list, had, wanted) => [...wanted].map((id) => ({
+        id,
+        name: list.find((x) => x.id === id)?.name ?? had?.find((x) => x.id === id)?.name ?? `#${id}`,
+    }));
+    return { secrets: known(secrets, prev?.secrets, secretIds), stores: known(stores, prev?.stores, storeIds) };
+}
+
+// Plan steps for a Re-entry plan, diffed by Ref against the live state.
+function reentryPlan(params) {
+    if (!live) return fail('conflict', 'no live deployment — add fixtures/deployment/current.json or deploy once in template mode');
+    if (params?.revision !== live.revision) {
+        return fail('conflict', `stale revision "${params?.revision}" — the deployment changed (now "${live.revision}"); reload current()`);
+    }
+    // Like the real host: the create-only fields are refused on Re-entry, not silently dropped.
+    const createOnly = ['newCdnOrigins', 'newCdnRules', 'cdnResourceFastedgeHandlers'].filter((k) => params[k] !== undefined);
+    if (createOnly.length) {
+        return fail('invalid_params', `${createOnly.join(' / ')} are create-only — on Re-entry send cdnOrigins / cdnRules (the full desired state)`);
+    }
+    if (params.cdnResourceId !== undefined && live.cdnResourceId !== undefined && params.cdnResourceId !== live.cdnResourceId) {
+        return fail('invalid_params', `the CDN resource cannot change on Re-entry (deployed: ${live.cdnResourceId})`);
+    }
+    const planApps = effectiveApps(params);
+    const removed = new Set(params.remove?.fastedgeApps ?? []);
+    const anchorRef = live.fastedgeApps[0]?.ref;
+    if (removed.has(anchorRef)) return fail('invalid_params', `cannot remove the anchor app "${anchorRef}"`);
+
+    const steps = [];
+    for (const old of live.fastedgeApps) {
+        const next = planApps.find((a) => a.ref === old.ref);
+        if (removed.has(old.ref)) { steps.push({ action: 'fastedge.apps.delete', describe: `Delete app "${old.name}"` }); continue; }
+        if (!next) return fail('conflict', `managed app "${old.ref}" is missing from the plan — list it in remove.fastedgeApps to delete it`);
+        if (next.name !== old.name || JSON.stringify(next.source) !== JSON.stringify(old.source)) {
+            return fail('invalid_params', `app "${old.ref}": name and source cannot change on Re-entry`);
+        }
+        if (JSON.stringify(next) !== JSON.stringify(old)) steps.push({ action: 'fastedge.apps.update', describe: `Update app "${old.name}"` });
+    }
+    for (const a of planApps) {
+        if (!live.fastedgeApps.some((o) => o.ref === a.ref)) steps.push({ action: 'fastedge.apps.create', describe: `Create app "${a.name}"` });
+    }
+    const diffDomain = (key, kind, label) => {
+        if (params[key] === undefined) return; // omitted domain → untouched
+        const before = live[key] ?? [];
+        for (const o of before) {
+            const n = params[key].find((x) => x.ref === o.ref);
+            if (!n) steps.push({ action: `cdn.${kind}.delete`, describe: `Delete ${label} "${o.name}"` });
+            else if (JSON.stringify(n) !== JSON.stringify(o)) steps.push({ action: `cdn.${kind}.update`, describe: `Update ${label} "${o.name}"` });
+        }
+        for (const n of params[key]) {
+            if (!before.some((o) => o.ref === n.ref)) steps.push({ action: `cdn.${kind}.create`, describe: `Create ${label} "${n.name}"` });
+        }
+    };
+    diffDomain('cdnOrigins', 'origins', 'CDN origin group');
+    diffDomain('cdnRules', 'rules', 'CDN rule');
+
+    // Same execution order as the real host: creates → updates → deletes.
+    const rank = (a) => (a.endsWith('.create') ? 0 : a.endsWith('.update') ? 1 : 2);
+    steps.sort((x, y) => rank(x.action) - rank(y.action));
+    return {
+        summary: steps.length ? `Update deployment: ${steps.length} change(s)` : 'No changes',
+        steps,
+        warnings: [],
+    };
+}
+
+function reentryApply(p) {
+    const removed = new Set(p.remove?.fastedgeApps ?? []);
+    const planApps = effectiveApps(p).filter((a) => !removed.has(a.ref));
+    // Keep the live order (the anchor is the first app), new apps after it: reordering the plan must
+    // not move the anchor.
+    const kept = live.fastedgeApps.map((o) => planApps.find((a) => a.ref === o.ref)).filter(Boolean);
+    const next = {
+        ...live,
+        fastedgeApps: [...kept, ...planApps.filter((a) => !live.fastedgeApps.some((o) => o.ref === a.ref))],
+        ...(p.cdnOrigins !== undefined ? { cdnOrigins: p.cdnOrigins } : {}),
+        ...(p.cdnRules !== undefined ? { cdnRules: p.cdnRules } : {}),
+        revision: String(Number(live.revision) + 1 || 1),
+    };
+    setLive({ ...next, ...lookupNames(next, live) });
+    return { createdFastedgeApps: [], createdCdnOrigins: [], createdCdnRules: [], status: 'complete' };
+}
+
+// A template-mode apply becomes the live state, so ?mode=reentry can pick up where it left off.
+function recordTemplateDeploy(p) {
+    if (!p?.fastedgeApps) return;
+    const state = {
+        revision: '1',
+        fastedgeApps: p.fastedgeApps.map((a) => ({
+            ...a,
+            env: { ...(p.sharedEnv ?? {}), ...(a.env ?? {}) },
+        })),
+        ...(p.cdnResourceId !== undefined ? { cdnResourceId: p.cdnResourceId } : {}),
+        ...(p.newCdnOrigins ? { cdnOrigins: p.newCdnOrigins } : {}),
+        ...(p.newCdnRules ? { cdnRules: p.newCdnRules } : {}),
+    };
+    setLive({ ...state, ...lookupNames(state) });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -298,7 +443,7 @@ export function stub(intent, params, theme) {
                 wizardAppId: 1,
                 managed: { appIds: [] },
                 features: {},
-                launchTemplateId: 1,
+                launchTemplateId: reentry ? null : 1,
                 // Derive companions from fixture templates with id 2–19.
                 // wizard-intake and sync-wizard-fixtures normalise template ids so
                 // the launch template is always id 1 and companions are ids 2..19.
@@ -346,7 +491,13 @@ export function stub(intent, params, theme) {
                 ...(fastedgeFilter ? { fastedgeFilter } : {}),
             }));
 
+        case 'deployment.current':
+            if (!reentry) return fail('denied', 'deployment.current is only available on Re-entry (open the mock host with ?mode=reentry)');
+            if (!live) return fail('conflict', 'no live deployment — add fixtures/deployment/current.json or deploy once in template mode');
+            return structuredClone(live);
+
         case 'deployment.plan': {
+            if (reentry) return rememberPlan(params, reentryPlan(params));
             const planApps = Array.isArray(params?.fastedgeApps) ? params.fastedgeApps : [{ name: 'stub-app' }];
             const planSecrets = Array.isArray(params?.newFastedgeSecrets) ? params.newFastedgeSecrets : [];
             const planStores = Array.isArray(params?.newFastedgeStores) ? params.newFastedgeStores : [];
@@ -376,12 +527,11 @@ export function stub(intent, params, theme) {
             if (planOrigins.length) parts.push(`${planOrigins.length} CDN origin(s)`);
             if (planRules.length) parts.push(`${planRules.length} CDN rule(s)`);
 
-            return {
-                planId: 'mock-plan-abc123',
+            return rememberPlan(params, {
                 summary: `Deploy: ${parts.join(', ')}`,
                 steps,
                 warnings: [],
-            };
+            });
         }
 
         // Write intents — resolved via consent dialog in host.js
@@ -401,13 +551,25 @@ export function stub(intent, params, theme) {
             return { id: 500001, name: params?.name ?? 'new-origin-group' };
         case 'cdn.rules.create':
             return { id: 600001, name: params?.name ?? 'new-rule', rule: params?.rule ?? '^/' };
-        case 'deployment.apply':
+        case 'deployment.apply': {
+            // The host forwards the planId it is applying; tests may omit it (→ the latest plan).
+            const id = params?.planId ?? latestPlanId;
+            const plan = plans.get(id);
+            if (!plan) return fail('not_found', `plan "${id}" not found or already applied`);
+            plans.delete(id);
+            // Like the real host: a plan made at an older revision (another plan applied since) is stale.
+            if (reentry && plan.revision !== live?.revision) {
+                return fail('conflict', `stale plan — made at revision "${plan.revision}", the deployment is now "${live?.revision}"; reload current()`);
+            }
+            if (reentry) return reentryApply(plan);
+            recordTemplateDeploy(plan);
             return {
                 createdFastedgeApps: [{ ref: 'app-1', id: 201, url: 'https://new-app-201.fastedge.gcorelabs.net' }],
                 createdCdnOrigins: [],
                 createdCdnRules: [],
                 status: 'complete',
             };
+        }
 
         default:
             return null;

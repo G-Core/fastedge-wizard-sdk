@@ -541,6 +541,24 @@ describe('deployment.deploy() — orchestration', () => {
         expect(onProgress).not.toHaveBeenCalled();
     });
 
+    it('current() sends the deployment.current intent and resolves with the live state', async () => {
+        const { session, port } = await completeHandshake();
+        const p = session.deployment.current();
+        const msg = sentIntents(port, 'deployment.current').at(-1) as IntentMsg;
+        expect(msg.params).toEqual({});
+        const live = { revision: 'r1', fastedgeApps: [], secrets: [], stores: [] };
+        resolveIntent(port, msg.id, live);
+        await expect(p).resolves.toEqual(live);
+    });
+
+    it('rejects a plan that mixes create-only and desired-state CDN collections, without sending it', async () => {
+        const { session, port } = await completeHandshake();
+        const mixed = { fastedgeApps: [], newCdnRules: [], cdnRules: [] };
+        await expect(session.deployment.plan(mixed)).rejects.toMatchObject({ code: 'invalid_params' });
+        await expect(session.deployment.deploy(mixed)).rejects.toMatchObject({ code: 'invalid_params' });
+        expect(sentIntents(port, 'deployment.plan')).toHaveLength(0);
+    });
+
     it('unsubscribes the progress listener even when apply rejects (finally path)', async () => {
         const { session, port } = await completeHandshake();
         const onProgress = vi.fn();
